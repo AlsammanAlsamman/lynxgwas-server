@@ -1,0 +1,79 @@
+# AI Agent settings (may contain a real cloud API key — never committed, per-machine local state)
+.agent_config.json
+
+# Large input data (GWAS files, loci definitions, spreadsheets)
+input/
+
+# Reference annotations (GFF3 — too large for git)
+resources/
+
+# Large reference/data files (too large for git)
+data_we_use/
+refpanels/
+
+# PLINK binaries and compiled Java classes
+bin/
+
+# Third-party libraries
+lib/
+
+# ...except the jar(s) bundled into the PyPI package (small, redistributable)
+!python/lynxgwas/_bundled/
+!python/lynxgwas/_bundled/lib/
+!python/lynxgwas/_bundled/lib/*.jar
+
+# Generated output (data files, PLINK subsets, LD results, tmp)
+output/data/
+output/plink_subsets/
+output/ld_results/
+output/tmp/
+output/plots/
+
+# Keep the viewer HTML (output/index.html) — it IS the app
+!output/index.html
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.swp
+*~
+*.log
+
+# Claude Code project config
+.claude/
+graphify-out/
+old/
+projects/
+output/
+image/
+graphify-out/
+AI_prompt*
+precodes/
+*.exe
+*.pdf
+
+# Python packaging build artifacts
+dist/
+build/
+*.egg-info/
+__pycache__/
+*.pyc
+.venv-build/
+
+# Local dev/test scratch (GWAS Catalog bulk snapshot + index, downloaded tool binaries, synthetic
+# test fixtures, ad-hoc build/run logs) — none of this belongs in version control
+gwascatalog_data/
+regulatory_data/
+testdata/
+tools-bin/
+scratch_*
+javac_err*.txt
+run_log*.txt
+build_log.txt
+# ── LYNXgwas Server: never commit live settings, server state, user data or build output ──
+server.properties
+server-data/
+projects/
+output/multi_locus/
+output/susiex/
+dist/

@@ -1,0 +1,88 @@
+{
+  "nodes": [
+    {
+      "kind": "precaution",
+      "title": "JDK HttpServer: HttpExchange.setAttribute is shared per HttpContext, not per request (session leak)",
+      "summary": "In com.sun.net.httpserver, HttpExchange.getAttribute/setAttribute delegate to the HttpContext's attribute map, so a value a Filter stores (e.g. the signed-in session) is visible to every other request on the same route. Using it for auth made anonymous visitors appear signed in as the last user.",
+      "detail": "Found in lynxgwas-server by an end-to-end test (logout appeared not to work: /api/auth/me still reported signed_in with no cookie). Fix: keep per-request state in a ConcurrentHashMap<HttpExchange, RequestInfo> keyed by the exchange object (identity equality), put in the Filter's doFilter and removed in finally; handlers look it up with the exchange. Also read the user id in the request thread before handing work to background threads. Regression test: after user A signs in, an anonymous request on the same route must still be anonymous.",
+      "domain": "java/web-security",
+      "tags": [
+        "java",
+        "httpserver",
+        "com.sun.net.httpserver",
+        "session",
+        "authentication",
+        "filter",
+        "security"
+      ],
+      "trigger": "Writing a com.sun.net.httpserver Filter that authenticates requests and passes the user/session to handlers via HttpExchange attributes",
+      "origin": "ai",
+      "attachments": [],
+      "snippet": null,
+      "id": "idea_0001",
+      "state": "seed",
+      "provenance": [
+        {
+          "project": "lynxgwas-server",
+          "session": "2772516e-1063-4297-9864-a99b379c118c",
+          "ts": "2026-09-30T16:29:16+00:00"
+        }
+      ],
+      "growth_log": [
+        {
+          "session": "2772516e-1063-4297-9864-a99b379c118c",
+          "ts": "2026-09-30T16:29:16+00:00",
+          "event": "seeded",
+          "note": "first captured"
+        }
+      ],
+      "edges": [],
+      "embedding": [],
+      "novelty": null,
+      "recurrence": 1,
+      "last_touched": "2026-09-30T16:29:16+00:00"
+    },
+    {
+      "kind": "technique",
+      "title": "Ship a Java server with no JDK/JRE install: cross-platform jlink bundle with launcher",
+      "summary": "When the target machine cannot install Java, build a trimmed runtime with jlink (modules from jdeps --print-module-deps plus service providers jdeps misses, e.g. jdk.crypto.ec for TLS/SMTP) and ship it next to the app with a launcher script that uses runtime/bin/java. For another OS, point jlink at that OS's JDK jmods of the exact same version (e.g. Microsoft/Temurin 17.0.10 linux-x64 tarball when building on Windows).",
+      "detail": "lynxgwas-server/scripts/package-server.sh: jlink --module-path <targetJDK>/jmods --add-modules <list> --strip-debug --no-man-pages --no-header-files --compress=2 --output runtime; result ~45-55 MB runtime, ~45 MB tar.gz. On Windows Git Bash, calling build.bat via cmd.exe needs MSYS_NO_PATHCONV=1 and '.\\\\build.bat' (NoDefaultCurrentDirectoryInExePath is set, so bare 'build.bat' is 'not recognized').",
+      "domain": "java/deployment",
+      "tags": [
+        "java",
+        "jlink",
+        "jdeps",
+        "packaging",
+        "no-install",
+        "portable-runtime",
+        "cross-platform"
+      ],
+      "trigger": null,
+      "origin": "collaborative",
+      "attachments": [],
+      "snippet": null,
+      "id": "idea_0002",
+      "state": "seed",
+      "provenance": [
+        {
+          "project": "lynxgwas-server",
+          "session": "2772516e-1063-4297-9864-a99b379c118c",
+          "ts": "2026-09-30T16:29:16+00:00"
+        }
+      ],
+      "growth_log": [
+        {
+          "session": "2772516e-1063-4297-9864-a99b379c118c",
+          "ts": "2026-09-30T16:29:16+00:00",
+          "event": "seeded",
+          "note": "first captured"
+        }
+      ],
+      "edges": [],
+      "embedding": [],
+      "novelty": null,
+      "recurrence": 1,
+      "last_touched": "2026-09-30T16:29:16+00:00"
+    }
+  ]
+}

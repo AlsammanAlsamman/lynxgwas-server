@@ -1,0 +1,43 @@
+# systemd unit for LYNXgwas Server (optional: needs an administrator once, to install the unit).
+# Without admin rights, run ./lynxgwas-server inside tmux/screen or from a user-level service
+# (systemctl --user) instead; see docs/DEPLOY.md.
+#
+#   sudo cp lynxgwas.service /etc/systemd/system/ && sudo systemctl enable --now lynxgwas
+#   secrets:  sudo systemctl edit lynxgwas   ->  [Service] Environment=LYNX_SMTP_PASSWORD=...
+
+[Unit]
+Description=LYNXgwas Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=lynxgwas
+Group=lynxgwas
+WorkingDirectory=/opt/lynxgwas-server
+Environment=LYNX_SERVER_CONFIG=/opt/lynxgwas-server/server.properties
+Environment=LYNX_JAVA_OPTS=-Xmx12g
+ExecStart=/opt/lynxgwas-server/lynxgwas-server
+Restart=on-failure
+RestartSec=5
+UMask=0077
+
+# Sandboxing: the service can only write its data folders
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictNamespaces=true
+ReadWritePaths=/srv/lynxgwas /opt/lynxgwas-server/app/output
+ReadOnlyPaths=/opt/lynxgwas-server
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

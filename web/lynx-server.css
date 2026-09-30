@@ -1,0 +1,63 @@
+/* LYNXgwas Server: account bar, auth dialogs, scope toggle, retention countdown, toasts. */
+
+#lx-account { margin-left: auto; display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; }
+#lx-account.floating { position: fixed; top: 0.6rem; right: 0.8rem; z-index: 900; background: #fff;
+  padding: 0.35rem 0.6rem; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.12); }
+.lx-email { color: inherit; opacity: 0.9; max-width: 22ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lx-btn { font: inherit; border: 1px solid #cbd5e1; background: #fff; color: #1a1a2e; border-radius: 6px;
+  padding: 0.3rem 0.8rem; cursor: pointer; }
+.lx-btn:hover { background: #f1f5f9; }
+.lx-btn.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+.lx-btn.primary:hover { background: #1d4ed8; }
+.lx-btn.danger { background: #dc2626; border-color: #dc2626; color: #fff; }
+.lx-btn:disabled { opacity: 0.6; cursor: wait; }
+.lx-link { font: inherit; background: none; border: none; color: #2563eb; cursor: pointer; padding: 0.2rem; text-decoration: underline; }
+header .lx-link { color: inherit; }
+
+.lx-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); display: flex; align-items: center;
+  justify-content: center; z-index: 1000; padding: 16px; }
+.lx-dialog { background: #fff; color: #1a1a2e; border-radius: 12px; width: 100%; max-width: 420px;
+  padding: 1.25rem 1.4rem 1rem; box-shadow: 0 20px 50px rgba(0,0,0,0.25); max-height: 90vh; overflow: auto; }
+.lx-dialog-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem; }
+.lx-dialog-head h3 { font-size: 1.1rem; margin: 0; }
+.lx-close { background: none; border: none; font-size: 1.5rem; line-height: 1; cursor: pointer; color: #64748b; }
+.lx-form { display: flex; flex-direction: column; gap: 0.7rem; }
+.lx-field { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem; color: #334155; }
+.lx-field input { font: inherit; font-size: 0.95rem; padding: 0.5rem 0.6rem; border: 1px solid #cbd5e1; border-radius: 6px; }
+.lx-field input:focus { outline: 2px solid #93c5fd; border-color: #2563eb; }
+.lx-note { font-size: 0.82rem; color: #475569; margin: 0; }
+.lx-msg { font-size: 0.85rem; min-height: 0; }
+.lx-msg.error { color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 0.4rem 0.6rem; margin-bottom: 0.5rem; }
+.lx-msg.ok { color: #166534; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 0.4rem 0.6rem; margin-bottom: 0.5rem; }
+.lx-extra { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.7rem; font-size: 0.82rem; }
+
+/* Public datasets / My projects switch */
+.lx-scope { display: inline-flex; border: 1px solid #cbd5e1; border-radius: 999px; overflow: hidden; background: #fff; }
+.lx-scope button { font: inherit; font-size: 0.85rem; border: none; background: none; padding: 0.35rem 0.95rem; cursor: pointer; color: #334155; }
+.lx-scope button[aria-pressed="true"] { background: #1a1a2e; color: #fff; }
+.lx-scope-hint { font-size: 0.8rem; color: #64748b; margin: 0.4rem 0 0.8rem; }
+
+/* Retention countdown on project rows */
+.lx-countdown { min-width: 120px; }
+.lx-countdown-bar { height: 6px; background: #e2e8f0; border-radius: 999px; overflow: hidden; }
+.lx-countdown-fill { height: 100%; border-radius: 999px; transition: width 0.3s; }
+.lx-countdown-text { font-size: 0.74rem; margin-top: 0.2rem; white-space: nowrap; font-weight: 600; }
+
+.lx-readonly-banner { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; font-size: 0.85rem;
+  padding: 0.45rem 0.8rem; border-radius: 8px; margin: 0.5rem 1rem; }
+
+.lx-upload-box { border: 2px dashed #cbd5e1; border-radius: 10px; padding: 1rem; text-align: center; font-size: 0.88rem; color: #475569; }
+.lx-upload-box.drag { border-color: #2563eb; background: #eff6ff; }
+.lx-progress { height: 8px; background: #e2e8f0; border-radius: 999px; overflow: hidden; margin-top: 0.6rem; }
+.lx-progress > div { height: 100%; background: #2563eb; width: 0; transition: width 0.2s; }
+
+#lx-toasts { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 0.5rem; z-index: 1100; max-width: min(420px, calc(100vw - 32px)); }
+.lx-toast { background: #1e293b; color: #fff; padding: 0.6rem 0.9rem; border-radius: 8px; font-size: 0.86rem;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.2); transition: opacity 0.4s; }
+.lx-toast.error { background: #b91c1c; }
+.lx-toast.ok { background: #166534; }
+.lx-toast.gone { opacity: 0; }
+
+@media (max-width: 640px) {
+  #lx-account .lx-email { display: none; }
+}

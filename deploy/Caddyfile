@@ -1,0 +1,29 @@
+# Caddy in front of LYNXgwas Server: automatic HTTPS (Let's Encrypt), HTTP/2, access log.
+# Caddy is a single static binary too (no installation needed): https://caddyserver.com/download
+# Run:  ./caddy run --config Caddyfile
+# Replace the domain; point its DNS A/AAAA record at this machine; open ports 80 and 443.
+
+lynxgwas.example.org {
+	encode gzip
+
+	# Uploads can be large (matches max.upload.mb in server.properties)
+	request_body {
+		max_size 2GB
+	}
+
+	reverse_proxy 127.0.0.1:8765 {
+		# The Java server trusts the LAST X-Forwarded-For hop (trust.proxy=true): Caddy appends it
+		header_up X-Forwarded-For {remote_host}
+		transport http {
+			read_timeout 30m
+			write_timeout 30m
+		}
+	}
+
+	log {
+		output file /var/log/caddy/lynxgwas-access.log {
+			roll_size 50MiB
+			roll_keep 10
+		}
+	}
+}

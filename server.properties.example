@@ -1,0 +1,57 @@
+# LYNXgwas Server settings. Copy to server.properties (next to the launcher) and edit.
+# Secrets are NOT stored here: they are read from the environment variables named below.
+
+# ── Network ─────────────────────────────────────────────────────────────
+# Keep 127.0.0.1 and put a TLS reverse proxy (Caddy, nginx) in front: see deploy/Caddyfile.
+bind.host=127.0.0.1
+port=8765
+# The address people type in their browser. Used for CSRF origin checks and in emails.
+public.origin=https://lynxgwas.example.org
+# true when served over HTTPS (always, in production): Secure cookies + HSTS.
+secure.cookies=true
+# true only when the proxy in front is yours (X-Forwarded-For is then trusted for rate limits).
+trust.proxy=true
+
+# ── Storage ─────────────────────────────────────────────────────────────
+# Private server state: accounts, project ownership, secret key, development outbox.
+# Absolute path recommended; must NOT be inside a web-served folder. Back it up.
+data.dir=/srv/lynxgwas/server-data
+# Project folders are always <app>/projects; make that a symlink to your data disk if needed.
+# Public, read-only datasets: comma-separated project ids, or * for every project without an owner.
+public.projects=*
+
+# ── Reference data (every user project uses these; users cannot choose paths) ──
+ref.panel.path=/srv/lynxgwas/ref/eur_1000g_dedup2
+ref.panel.population=EUR
+gff3.file=/srv/lynxgwas/ref/gencode.v37lift37.annotation.gff3
+# Optional: SuSiEx.py for cross-ancestry fine-mapping (empty = feature disabled)
+susiex.path=
+
+# ── Retention and quotas ─────────────────────────────────────────────────
+# User projects are deleted this many days after creation; warning email N days before.
+retention.days=15
+retention.warn.days=3
+# Accounts that never verify their email are removed after this many hours.
+unverified.account.hours=48
+max.upload.mb=2048
+max.projects.per.user=5
+max.storage.per.user.mb=8192
+# Heavy jobs (processing, analyses) running at once: per user, and for the whole server.
+max.jobs.per.user=1
+max.jobs.total=4
+
+# ── Email (verification codes, retention warnings) ──────────────────────
+# Leave smtp.host empty ONLY for testing: emails are then written to <data.dir>/outbox.
+smtp.host=smtp.example.org
+# 587 with starttls, or 465 with ssl. Plain SMTP is refused.
+smtp.port=587
+smtp.security=starttls
+smtp.user=no-reply@example.org
+# Name of the environment variable that holds the SMTP password (never put the password here).
+smtp.password.env=LYNX_SMTP_PASSWORD
+mail.from=LYNXgwas <no-reply@example.org>
+
+# ── Secret key ───────────────────────────────────────────────────────────
+# Environment variable with a random secret (at least 32 characters) used to protect stored
+# codes/sessions. If unset, a random key is generated once into <data.dir>/pepper.key.
+pepper.env=LYNX_CODE_PEPPER
