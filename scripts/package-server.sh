@@ -46,6 +46,11 @@ test -d "$TARGET_JDK/jmods" || { echo "no jmods folder in $TARGET_JDK" >&2; exit
 
 NAME="lynxgwas-server-$TARGET"
 OUT="dist/$NAME"
+# Never wipe a package folder that is in use (live settings, linked datasets, server state)
+if [ -e "$OUT/server.properties" ] || [ -n "$(ls -A "$OUT/app/projects" 2>/dev/null)" ]; then
+  echo "$OUT is in use (server.properties or app/projects present). Move it aside first; not overwriting." >&2
+  exit 3
+fi
 rm -rf "$OUT"
 mkdir -p "$OUT/app"
 
@@ -59,6 +64,7 @@ mkdir -p "$OUT/app/bin" "$OUT/app/docs" "$OUT/app/projects" "$OUT/app/output"
 find bin -maxdepth 1 -name '*.class' -exec cp {} "$OUT/app/bin/" \;
 for d in rsid loci export catalog opentargets; do [ -d "bin/$d" ] && cp -r "bin/$d" "$OUT/app/bin/"; done
 cp -r lib tools assets web "$OUT/app/"
+mkdir -p "$OUT/app/scripts" && cp scripts/ukbb_ld.py "$OUT/app/scripts/"   # UK Biobank LD reader (SuSiE, mvSuSiE)
 cp -r docs/images "$OUT/app/docs/"
 cp index.html viewer.html serpent_plot.html gene_constellation.html "$OUT/app/"
 mkdir -p "$OUT/app/config"
