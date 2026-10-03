@@ -40,6 +40,10 @@ own machine, with no cloud account or upload step involved. It also includes a b
 that can drive the same actions through natural language, running against a fully local model by
 default — see [How it works](#how-it-works) below for exactly what stays local and what doesn't.
 
+An online, multi-user edition with the same analyses is maintained as
+[LYNXgwas Server](https://github.com/AlsammanAlsamman/lynxgwas-server): accounts, private projects
+deleted after 15 days, read-only public datasets, and no AI agent or access to server files.
+
 ## How it works
 
 ![LYNXgwas architecture: local-first pipeline with an opt-in AI Agent](https://raw.githubusercontent.com/AlsammanAlsamman/LYNXgwas/main/docs/images/architecture_overview.png)
@@ -119,7 +123,18 @@ your own GWAS summary statistics and walk through the setup wizard.
 - **coloc** — colocalization against a second trait's summary stats (PP.H0–H4)
 - **GWAMA** — meta-analysis pass-through
 - **SuSiEx** — cross-ancestry joint fine-mapping across multiple LYNXgwas projects at once
-- **MAGMA** — gene-based and gene-set association
+- **mvSuSiE** — joint fine-mapping of an aligned locus across datasets (within a disease, or across
+  diseases whose credible sets overlap), with sample overlap estimated from null SNPs
+- **MAGMA** — per-locus gene-based test ranking the genes of each locus
+- **Causal-SNP ranking** — one score per SNP from SuSiE/ABF/COJO, joint fine-mapping, CADD, LD score,
+  histone peaks, coding position, TSS distance and MAGMA, with a logistic model trained on FinnGen's
+  in-sample-LD fine-mapping; the viewer shows each SNP's main reasons
+- Every per-locus tool can run on one locus or on all loci of a project ("Run on all loci")
+
+**Heritability (summary statistics only)**
+- **SNP-heritability** by LD score regression, built in (validated against the reference `ldsc`):
+  observed and liability scale, intercept and ratio, with the sample-size definition reported
+- **Local heritability** of each locus (HESS), and the share of SNP-heritability the loci explain
 
 **Cross-dataset & regulatory**
 - **Gene/Region Constellation** — compare the same gene or genomic region across many GWAS datasets
@@ -151,6 +166,10 @@ your own GWAS summary statistics and walk through the setup wizard.
 | PLINK 1.9 | LD, clumping, reference panel subsetting | Prompted for a path, or auto-downloaded |
 | GENCODE GFF3 | Gene track annotation | Prompted for a path, or auto-downloaded |
 | A PLINK-format reference panel (`.bed`/`.bim`/`.fam`) | LD computation | You supply this in the project wizard |
+| R with `susieR`, `bigsnpr` (and `mvsusieR` for joint fine-mapping) | Fine-mapping, local heritability | Found automatically, including installs outside `PATH` |
+| European LD scores (`eur_w_ld_chr`, 33 MB) | SNP-heritability | Place in `resources/ldsc/` or set `LYNXGWAS_LDSC` |
+| CADD v1.6 GRCh37 prescored SNVs (2.4 GB, tabix) | Causal-SNP ranking | Place in `resources/cadd/` or set `LYNXGWAS_CADD`; optional |
+| MAGMA, GCTA binaries | Gene test, COJO | Place in `bin/` |
 
 ## Documentation
 

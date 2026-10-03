@@ -50,12 +50,37 @@ A run without an `owner_id` is public.
 - PLINK (`app/bin/plink`)
 - GCTA (`app/bin/gcta64`)
 - GWAMA (`app/bin/GWAMA`)
-- R with `susieR`, `coloc` and `bigsnpr`
+- MAGMA (`app/bin/magma`) for the per-locus gene-based test
+- R with `susieR`, `coloc`, `bigsnpr`, `data.table`, `jsonlite` and `RSpectra` (local heritability)
+- For joint fine-mapping: `mvsusieR` 0.3.0, which needs `susieR` >= 0.15.54. Install both into a
+  separate library and point `LYNXGWAS_R_LIB` at it, so the main library keeps the `susieR`
+  version the single-dataset tools were validated with.
 - SuSiEx (optional; set `susiex.path`)
 
 Use the Linux builds of these tools. All of them are single binaries or user-level installs,
 so no admin rights are needed. R can run from a user-level conda/micromamba environment; put
 its `bin` folder on `PATH` or set `LYNXGWAS_RSCRIPT`.
+
+**Reference data for the analyses** (read-only; set the environment variables in the service
+file, `deploy/lynxgwas.service`):
+
+| Data | Used by | Setting | Size |
+|---|---|---|---|
+| European LD scores `eur_w_ld_chr` (1000 Genomes, HapMap3; Zenodo record 8182036) | SNP-heritability (LD score regression) | `LYNXGWAS_LDSC` = the `eur_w_ld_chr` folder | 33 MB |
+| CADD v1.6 GRCh37 prescored SNVs `gnomad.genomes.r2.1.1.snv.tsv.gz` + `.tbi` | Causal-SNP ranking (CADD feature) | `LYNXGWAS_CADD` = the `.tsv.gz` file | 2.4 GB |
+| UK Biobank LD matrices (optional) | SuSiE / mvSuSiE LD | `LYNXGWAS_UKBB_LD` | ~9 GB |
+| mvSuSiE R library | Joint fine-mapping | `LYNXGWAS_R_LIB` | — |
+
+Without the LD scores, SNP-heritability reports that they are missing; without CADD, the
+ranking gives every SNP the same background CADD value, so that feature has no effect. The
+trained ranking model (`tools/snp_rank_model.json`) and the R scripts (`tools/r/`) ship in the
+package.
+
+**Public results.** Results computed on the public datasets with the desktop app are shared
+with the server through the project folders: fine-mapping, MAGMA, local and genome-wide
+heritability, and causal-SNP rankings appear read-only to everyone. Joint fine-mapping runs over
+a public cross-dataset run are public when they have no owner: copy their `meta.json`,
+`result.json` and `manifest.json` into `app/output/mvsusie/<id>/`.
 
 ## 4. Email
 

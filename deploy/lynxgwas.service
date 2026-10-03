@@ -16,6 +16,11 @@ Group=lynxgwas
 WorkingDirectory=/opt/lynxgwas-server
 Environment=LYNX_SERVER_CONFIG=/opt/lynxgwas-server/server.properties
 Environment=LYNX_JAVA_OPTS=-Xmx12g
+# Reference data for the analyses (read-only; see docs/DEPLOY.md "Reference data for the analyses")
+Environment=LYNXGWAS_LDSC=/srv/lynxgwas/reference/ldsc/eur_w_ld_chr
+Environment=LYNXGWAS_CADD=/srv/lynxgwas/reference/cadd/gnomad.genomes.r2.1.1.snv.tsv.gz
+Environment=LYNXGWAS_UKBB_LD=/srv/lynxgwas/reference/ukbb_ld
+Environment=LYNXGWAS_R_LIB=/srv/lynxgwas/reference/R/mvsusie-lib
 ExecStart=/opt/lynxgwas-server/lynxgwas-server
 Restart=on-failure
 RestartSec=5
