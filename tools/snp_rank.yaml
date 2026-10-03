@@ -1,11 +1,11 @@
 tool: snp_rank
-version: "1.0"
+version: "1.1"
 label: "Causal-SNP ranking"
-description: "Ranks the SNPs of the locus by how likely each is to be causal, combining SuSiE, ABF and COJO, joint fine-mapping across datasets (mvSuSiE), CADD, LD score, Roadmap histone peaks in the disease tissue, coding/UTR position, distance to the nearest transcription start and the MAGMA gene test, with a logistic model trained on FinnGen's in-sample-LD fine-mapping. Run SuSiE first; ABF, COJO, MAGMA and a joint run add evidence when available."
+description: "Ranks the SNPs of the locus by how likely each is to be causal, combining SuSiE, ABF and COJO, joint fine-mapping across datasets (mvSuSiE), CADD, LD score, Roadmap histone peaks in the disease tissue, coding/UTR position, distance to the nearest transcription start, the MAGMA gene test, and replication in the other datasets of the same disease in a cross-dataset run (in their credible sets, mean PIP, top SNP, genome-wide significant, same effect direction), with a conditional-logit model trained on FinnGen's in-sample-LD fine-mapping. Run SuSiE first; ABF, COJO, MAGMA and a joint run add evidence when available."
 language: java
 command: "SnpRankModel"
 requires: [harmonized_gwas, matched_ref]
 params:
-  - {name: joint_job, type: string, default: "", label: "Joint run (optional)", description: "Use joint fine-mapping only from this cross-dataset run (leave blank for the latest)."}
+  - {name: joint_job, type: string, default: "", label: "Joint run (optional)", description: "Use joint fine-mapping and the other datasets only from this cross-dataset run (leave blank for the latest)."}
 output_mapping:
   - {raw: score, as: snp_rank_score, scope: per_snp, type: double}

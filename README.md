@@ -127,8 +127,10 @@ your own GWAS summary statistics and walk through the setup wizard.
   diseases whose credible sets overlap), with sample overlap estimated from null SNPs
 - **MAGMA** — per-locus gene-based test ranking the genes of each locus
 - **Causal-SNP ranking** — one score per SNP from SuSiE/ABF/COJO, joint fine-mapping, CADD, LD score,
-  histone peaks, coding position, TSS distance and MAGMA, with a logistic model trained on FinnGen's
-  in-sample-LD fine-mapping; the viewer shows each SNP's main reasons
+  histone peaks, coding position, TSS distance, MAGMA, and how the SNP replicates in the other
+  datasets of the same disease (credible sets, PIPs, top SNP, significance, effect direction), with a
+  conditional-logit model trained on FinnGen's in-sample-LD fine-mapping; the viewer shows each SNP's
+  main reasons
 - Every per-locus tool can run on one locus or on all loci of a project ("Run on all loci")
 
 **Heritability (summary statistics only)**

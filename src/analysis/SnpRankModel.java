@@ -24,7 +24,8 @@ public final class SnpRankModel {
     public static final String[] FEATURES = {
         "susie_pip", "in_susie_cs", "abf_pip", "cojo_selected", "logp_rel",
         "joint_pip", "has_joint", "cadd_phred", "ld_score_log",
-        "h3k27ac", "h3k4me1", "h3k4me3", "coding", "utr", "log_tss_dist", "magma_gene_rel"
+        "h3k27ac", "h3k4me1", "h3k4me3", "coding", "utr", "log_tss_dist", "magma_gene_rel",
+        "xds_cs_frac", "xds_pip_mean", "xds_lead_frac", "xds_sig_frac", "xds_dir_frac", "has_xds"
     };
 
     /** Short human-readable label per feature, for the viewer's contribution breakdown. */
@@ -34,7 +35,10 @@ public final class SnpRankModel {
             {"cojo_selected", "COJO signal"}, {"logp_rel", "relative significance"}, {"joint_pip", "joint (mvSuSiE) PIP"},
             {"has_joint", "joint run available"}, {"cadd_phred", "CADD"}, {"ld_score_log", "LD score"},
             {"h3k27ac", "H3K27ac peak"}, {"h3k4me1", "H3K4me1 peak"}, {"h3k4me3", "H3K4me3 peak"},
-            {"coding", "coding"}, {"utr", "UTR"}, {"log_tss_dist", "distance to TSS"}, {"magma_gene_rel", "MAGMA gene"}};
+            {"coding", "coding"}, {"utr", "UTR"}, {"log_tss_dist", "distance to TSS"}, {"magma_gene_rel", "MAGMA gene"},
+            {"xds_cs_frac", "in other datasets' sets"}, {"xds_pip_mean", "PIP in other datasets"},
+            {"xds_lead_frac", "top SNP in other datasets"}, {"xds_sig_frac", "significant in other datasets"},
+            {"xds_dir_frac", "same direction in other datasets"}, {"has_xds", "other datasets available"}};
         for (String[] p : l) LABEL.put(p[0], p[1]);
     }
 

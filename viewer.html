@@ -879,7 +879,8 @@ function rankChip(run, data, panelEl) {
       const cap = document.createElement('div');
       cap.className = 'rank-cap';
       cap.textContent = 'Causal-SNP ranking: a conditional-logit model trained on FinnGen’s in-sample-LD fine-mapping combines SuSiE, ABF, COJO, '
-        + 'joint fine-mapping, CADD, LD score, histone peaks in the disease tissue, coding position, distance to the TSS and MAGMA. '
+        + 'joint fine-mapping, CADD, LD score, histone peaks in the disease tissue, coding position, distance to the TSS, MAGMA, '
+        + 'and replication in the other datasets of the same disease (credible sets, PIPs, top SNP, significance, effect direction). '
         + 'Score = probability that the SNP is this locus’s causal variant (scores sum to 1 over the locus). '
         + 'Top 25 of ' + lines.length + ' SNPs; "why" lists what sets each SNP above the locus average.';
       const tbl = document.createElement('table');

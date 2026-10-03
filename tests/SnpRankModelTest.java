@@ -23,6 +23,16 @@ public class SnpRankModelTest {
         failures += check("contributions sum to the linear predictor",
             Math.abs(c.values().stream().mapToDouble(Double::doubleValue).sum() - m.linear(x)) < 1e-12);
         failures += check("untransformed feature contribution", Math.abs(c.get("cadd_phred") - 1.0) < 1e-12);
+
+        // the shipped model must use exactly the features the app computes, or a feature would silently drop out
+        File shipped = new File("tools/snp_rank_model.json");
+        if (shipped.isFile()) {
+            SnpRankModel.Model sm = SnpRankModel.load(shipped);
+            Set<String> known = new HashSet<>(Arrays.asList(SnpRankModel.FEATURES));
+            failures += check("shipped model loads as a conditional logit", sm.conditional());
+            failures += check("every shipped-model feature is computed by the app", known.containsAll(sm.coef.keySet()));
+            failures += check("the app computes no feature the shipped model lacks", sm.coef.keySet().containsAll(known));
+        }
         if (failures > 0) { System.out.println("FAIL: " + failures + " test(s) failed"); System.exit(1); }
         System.out.println("PASS: all SnpRankModel tests passed");
     }

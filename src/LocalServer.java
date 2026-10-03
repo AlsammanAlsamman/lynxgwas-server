@@ -94,6 +94,35 @@ public class LocalServer {
         projectStates.put(projectId, ps);
     }
 
+    /** Light view of another project for the cross-dataset ranking features: its config and the locus
+     *  coordinates from data/manifest.json (no GFF parse, no per-locus JSON), cached by manifest time. */
+    private static final class XdsSource { long stamp; Config cfg; List<Locus> loci; }
+    private final Map<String, XdsSource> xdsSources = new ConcurrentHashMap<>();
+    private static final java.util.regex.Pattern MANIFEST_LOCUS = java.util.regex.Pattern.compile(
+        "\"id\":\"([^\"]+)\",\"index\":(\\d+),\"chr\":\"([^\"]+)\",\"start\":(\\d+),\"end\":(\\d+)");
+
+    private XdsSource xdsSource(String projectId) {
+        File dir = new File("projects", projectId);
+        File mf = new File(dir, "data/manifest.json");
+        if (!mf.isFile()) return null;
+        XdsSource c = xdsSources.get(projectId);
+        if (c != null && c.stamp == mf.lastModified()) return c;
+        try {
+            XdsSource s = new XdsSource();
+            s.stamp = mf.lastModified();
+            s.cfg = Config.loadFromProject(dir.getAbsolutePath());
+            s.loci = new ArrayList<>();
+            java.util.regex.Matcher m = MANIFEST_LOCUS.matcher(new String(Files.readAllBytes(mf.toPath()), "UTF-8"));
+            while (m.find())
+                s.loci.add(new Locus(m.group(1), Integer.parseInt(m.group(2)), m.group(3), Long.parseLong(m.group(4)),
+                                     Long.parseLong(m.group(5)), s.cfg.locusPadding));
+            xdsSources.put(projectId, s);
+            return s;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     private ProjectState ensureProjectState(String projectId, String projectDir) {
         ProjectState ps = projectStates.get(projectId);
         if (ps != null && ps.config != null && ps.loci != null) return ps;
@@ -1744,7 +1773,7 @@ public class LocalServer {
         List<String> hl = Files.readAllLines(harm.toPath());
         List<String> hh = Arrays.asList(hl.get(0).split("\t", -1));
         int iId = hh.indexOf("snp_id"), iPos = hh.indexOf("pos"), iEa = hh.indexOf("ea"), iNea = hh.indexOf("nea"), iP = hh.indexOf("pvalue");
-        int iRs = hh.indexOf("rsid");
+        int iRs = hh.indexOf("rsid"), iBeta = hh.indexOf("beta");
         List<String[]> snps = new ArrayList<>();          // {id, pos, ea, nea, p}
         Map<Long, Integer> byPos = new HashMap<>();
         double maxLogp = 0;
@@ -1760,13 +1789,15 @@ public class LocalServer {
             maxLogp = Math.max(maxLogp, lp);
             byPos.put(pos, snps.size());
             String shown = iRs >= 0 && f[iRs].startsWith("rs") ? f[iRs] : f[iId];
-            snps.add(new String[]{shown, String.valueOf(pos), f[iEa].toUpperCase(), f[iNea].toUpperCase(), String.valueOf(lp)});
+            snps.add(new String[]{shown, String.valueOf(pos), f[iEa].toUpperCase(), f[iNea].toUpperCase(), String.valueOf(lp),
+                iBeta >= 0 ? f[iBeta] : "NA"});
         }
         if (snps.isEmpty()) throw new IOException("No SNPs in the harmonised locus file");
         int n = snps.size();
         double[][] x = new double[n][SnpRankModel.FEATURES.length];
         int F_SUSIE = 0, F_CS = 1, F_ABF = 2, F_COJO = 3, F_LOGP = 4, F_JOINT = 5, F_HASJ = 6, F_CADD = 7, F_LD = 8,
-            F_K27 = 9, F_K4M1 = 10, F_K4M3 = 11, F_CODING = 12, F_UTR = 13, F_TSS = 14, F_MAGMA = 15;
+            F_K27 = 9, F_K4M1 = 10, F_K4M3 = 11, F_CODING = 12, F_UTR = 13, F_TSS = 14, F_MAGMA = 15,
+            F_XCS = 16, F_XPIP = 17, F_XLEAD = 18, F_XSIG = 19, F_XDIR = 20, F_HASX = 21;
         for (int i = 0; i < n; i++) x[i][F_LOGP] = maxLogp > 0 ? Double.parseDouble(snps.get(i)[4]) / maxLogp : 0;
 
         // 2. This locus's latest fine-mapping and MAGMA runs
@@ -1840,6 +1871,95 @@ public class LocalServer {
                 for (double[] row : x) row[F_HASJ] = 1;
             }
         }
+
+        // 3b. Cross-dataset replication: the other datasets of the same disease in the cross-dataset run
+        //     (joint_job if given, else the joint run's own run, else the newest finished run containing this
+        //     project). For each SNP: fraction of those datasets whose SuSiE credible set contains it, its mean
+        //     SuSiE PIP there, fraction where it is their top SNP, fraction where it is genome-wide significant,
+        //     and fraction with the same effect direction (alleles aligned). Restricting to one run keeps a
+        //     user to datasets they can already see, and lets training exclude the cohort the labels come from.
+        String xdsRun = !jointJob.isEmpty() ? jointJob : (joint != null ? joint.job : null);
+        if (xdsRun == null) {
+            String bestAt = "";
+            for (LocusMatrixJobMeta m : locusMatrixJobMeta.values()) {
+                if (m.projectIds == null || !m.projectIds.contains(projectId) || !locusMatrixJobs.containsKey(m.jobId)) continue;
+                String at = m.createdAt == null ? "" : m.createdAt;
+                if (at.compareTo(bestAt) > 0) { bestAt = at; xdsRun = m.jobId; }
+            }
+        }
+        int xdsN = 0;
+        LocusMatrixJobMeta xm = xdsRun == null ? null : locusMatrixJobMeta.get(xdsRun);
+        String myDisease = GeneConstellationBuilder.diseaseGroupOf(projectId, cfg.diseaseName);
+        // only a run that contains this dataset: on the server that is a run its owner (or everyone) can see
+        if (xm != null && xm.projectIds != null && xm.projectIds.contains(projectId)) {
+            double[] csCnt = new double[n], pipSum = new double[n], leadCnt = new double[n], sigCnt = new double[n], dirAgree = new double[n], dirN = new double[n];
+            for (String other : xm.projectIds) {
+                if (other.equals(projectId)) continue;
+                XdsSource ops = xdsSource(other);
+                if (ops == null) continue;
+                if (!myDisease.equals(GeneConstellationBuilder.diseaseGroupOf(other, ops.cfg.diseaseName))) continue;
+                Map<Long, double[]> pipOf = new HashMap<>();         // pos -> {pip, inCs}
+                Map<Long, String[]> gw = new HashMap<>();            // pos -> {ea, nea, beta, p}
+                for (Locus ol : ops.loci) {
+                    if (!ol.chr.replaceFirst("^chr", "").equals(chr) || ol.end < locus.start || ol.start > locus.end) continue;
+                    RunSummary rs = latestRuns(ops.cfg, ol).get("susie_finemapping");
+                    if (rs == null) continue;
+                    File oRoot = BaseStepPipeline.analysisDir(ops.cfg, ol);
+                    List<String> rl = Files.readAllLines(new File(new File(new File(oRoot, "runs"), rs.runId), "result.tsv").toPath());
+                    List<String> rh = Arrays.asList(rl.get(0).split("\t", -1));
+                    int ip = rh.indexOf("pos"), iv = rh.indexOf("susie_pip"), ic = rh.indexOf("susie_cs");
+                    for (int r = 1; r < rl.size(); r++) {
+                        String[] f = rl.get(r).split("\t", -1);
+                        try {
+                            long pos = Long.parseLong(f[ip]);
+                            double pip = Double.parseDouble(f[iv]);
+                            boolean cs = ic >= 0 && !f[ic].isEmpty() && !f[ic].equals("NA") && !f[ic].equals("0");
+                            double[] prev = pipOf.get(pos);
+                            if (prev == null || pip > prev[0]) pipOf.put(pos, new double[]{pip, cs ? 1 : 0});
+                        } catch (Exception ignored) {}
+                    }
+                    File oh = new File(new File(oRoot, "harmonized"), "harmonized_gwas.tsv");
+                    if (oh.isFile()) {
+                        List<String> gl = Files.readAllLines(oh.toPath());
+                        List<String> gh = Arrays.asList(gl.get(0).split("\t", -1));
+                        int gp = gh.indexOf("pos"), ge = gh.indexOf("ea"), gn = gh.indexOf("nea"), gb = gh.indexOf("beta"), gpv = gh.indexOf("pvalue");
+                        for (int r = 1; r < gl.size(); r++) {
+                            String[] f = gl.get(r).split("\t", -1);
+                            try { gw.putIfAbsent(Long.parseLong(f[gp]), new String[]{f[ge].toUpperCase(), f[gn].toUpperCase(), f[gb], f[gpv]}); } catch (Exception ignored) {}
+                        }
+                    }
+                }
+                if (pipOf.isEmpty()) continue;
+                xdsN++;
+                long leadPos = -1; double leadPip = -1;
+                for (Map.Entry<Long, double[]> e : pipOf.entrySet()) if (e.getValue()[0] > leadPip) { leadPip = e.getValue()[0]; leadPos = e.getKey(); }
+                for (int i = 0; i < n; i++) {
+                    long pos = Long.parseLong(snps.get(i)[1]);
+                    double[] pv = pipOf.get(pos);
+                    if (pv != null) { pipSum[i] += pv[0]; csCnt[i] += pv[1]; }
+                    if (pos == leadPos) leadCnt[i]++;
+                    String[] g = gw.get(pos);
+                    if (g == null) continue;
+                    try { if (Double.parseDouble(g[3]) < 5e-8) sigCnt[i]++; } catch (NumberFormatException ignored) {}
+                    double myBeta, oBeta;
+                    try { myBeta = Double.parseDouble(snps.get(i)[5]); oBeta = Double.parseDouble(g[2]); } catch (Exception e) { continue; }
+                    String ea = snps.get(i)[2], nea = snps.get(i)[3];
+                    int sign = ea.equals(g[0]) && nea.equals(g[1]) ? 1 : (ea.equals(g[1]) && nea.equals(g[0]) ? -1 : 0);
+                    if (sign == 0 || myBeta == 0 || oBeta == 0) continue;
+                    dirN[i]++;
+                    if (Math.signum(myBeta) == sign * Math.signum(oBeta)) dirAgree[i]++;
+                }
+            }
+            for (int i = 0; i < n && xdsN > 0; i++) {
+                x[i][F_XCS] = csCnt[i] / xdsN;
+                x[i][F_XPIP] = pipSum[i] / xdsN;
+                x[i][F_XLEAD] = leadCnt[i] / xdsN;
+                x[i][F_XSIG] = sigCnt[i] / xdsN;
+                x[i][F_XDIR] = dirN[i] > 0 ? dirAgree[i] / dirN[i] : 0.5;
+                x[i][F_HASX] = 1;
+            }
+        }
+        if (xdsN == 0) for (double[] row : x) row[F_XDIR] = 0.5;
 
         // 4. Annotation: gene model, Roadmap peaks, LD score, CADD
         pt.update("Annotating SNPs", 2, 4);
@@ -1941,9 +2061,10 @@ public class LocalServer {
         }
         try (PrintWriter pw = new PrintWriter(new OutputStreamWriter(new FileOutputStream(new File(runDir, "provenance.json")), "UTF-8"))) {
             pw.printf(Locale.ROOT, "{%n  \"job_id\": \"%s\",%n  \"tool\": \"snp_rank\",%n  \"tool_version\": \"1.0\",%n  \"timestamp\": %d,%n"
-                + "  \"params\": {\"joint_job\": \"%s\"},%n  \"model\": \"%s\",%n  \"joint_run\": \"%s\",%n  \"missing_runs\": \"%s\"%n}%n",
+                + "  \"params\": {\"joint_job\": \"%s\"},%n  \"model\": \"%s\",%n  \"joint_run\": \"%s\",%n  \"missing_runs\": \"%s\",%n"
+                + "  \"cross_dataset_run\": \"%s\",%n  \"cross_datasets\": %d%n}%n",
                 escJ(jobId), System.currentTimeMillis(), escJ(jointJob), model == null ? "" : escJ(model.version),
-                joint == null ? "" : escJ(joint.id), escJ(String.join(",", missing)));
+                joint == null ? "" : escJ(joint.id), escJ(String.join(",", missing)), xdsRun == null ? "" : escJ(xdsRun), xdsN);
         }
         res.ok = true;
         res.resultRows = n;
