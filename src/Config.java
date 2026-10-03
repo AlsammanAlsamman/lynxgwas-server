@@ -42,6 +42,7 @@ public class Config {
     public int    nCases            = 0;
     public int    nControls         = 0;
     public String traitType         = "";     // "quantitative" or "binary"
+    public double prevalence        = 0;      // population prevalence K (case-control), for liability-scale h2
     public String effectType        = "";     // "beta", "OR", "logOR"
     public String genomeBuild       = "GRCh37";
     public String ancestry          = "";
@@ -142,6 +143,7 @@ public class Config {
         nCases             = Integer.parseInt(p.getProperty("n.cases", String.valueOf(nCases)));
         nControls          = Integer.parseInt(p.getProperty("n.controls", String.valueOf(nControls)));
         traitType          = p.getProperty("trait.type", traitType);
+        try { prevalence = Double.parseDouble(p.getProperty("trait.prevalence", "0").trim()); } catch (NumberFormatException e) { prevalence = 0; }
         effectType         = p.getProperty("effect.type", effectType);
         genomeBuild        = p.getProperty("genome.build", genomeBuild);
         ancestry           = p.getProperty("ancestry", ancestry.isEmpty() ? refPanelPopulation : ancestry);
@@ -206,6 +208,7 @@ public class Config {
         j.append(String.format(",\"n.cases\":%d", nCases));
         j.append(String.format(",\"n.controls\":%d", nControls));
         kv(j, "trait.type", traitType, false);
+        kv(j, "trait.prevalence", prevalence > 0 ? String.valueOf(prevalence) : "", false);
         kv(j, "effect.type", effectType, false);
         kv(j, "genome.build", genomeBuild, false);
         kv(j, "ancestry", ancestry, false);
@@ -279,6 +282,7 @@ public class Config {
             pw.println("n.cases=" + nCases);
             pw.println("n.controls=" + nControls);
             pw.println("trait.type=" + traitType);
+            if (prevalence > 0) pw.println("trait.prevalence=" + prevalence);
             pw.println("effect.type=" + effectType);
             pw.println("genome.build=" + genomeBuild);
             pw.println("ancestry=" + ancestry);
@@ -339,6 +343,7 @@ public class Config {
         v = jsonStr(json, "n.controls", "");
         if (!v.isEmpty()) nControls = Integer.parseInt(v);
         traitType          = jsonStr(json, "trait.type",   traitType);
+        try { prevalence = Double.parseDouble(jsonStr(json, "trait.prevalence", String.valueOf(prevalence)).trim()); } catch (NumberFormatException e) { prevalence = 0; }
         effectType         = jsonStr(json, "effect.type",  effectType);
         genomeBuild        = jsonStr(json, "genome.build", genomeBuild);
         ancestry           = jsonStr(json, "ancestry",     ancestry);

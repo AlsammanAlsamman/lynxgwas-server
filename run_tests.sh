@@ -32,6 +32,9 @@ javac -encoding UTF-8 -d bin -cp "bin$LIBCP" \
   tests/SerpentPlotBuilderTest.java \
   tests/ToolLocatorTest.java \
   tests/PlinkRunnerTest.java \
+  tests/LdscRegressionTest.java \
+  tests/ProjectMetadataFingerprintTest.java \
+  tests/SnpRankModelTest.java \
   tests/ServerSecurityTest.java \
   tests/ServerHttpTest.java \
   tests/MultiLocusResultPersistenceTest.java \
@@ -116,6 +119,12 @@ echo "--- ToolLocatorTest ---"
 java -cp "bin$LIBCP" ToolLocatorTest || FAILED=1
 echo "--- PlinkRunnerTest ---"
 java -cp "bin$LIBCP" PlinkRunnerTest || FAILED=1
+echo "--- LdscRegressionTest ---"
+java -cp "bin$LIBCP" LdscRegressionTest || FAILED=1
+echo "--- ProjectMetadataFingerprintTest ---"
+java -cp "bin$LIBCP" ProjectMetadataFingerprintTest || FAILED=1
+echo "--- SnpRankModelTest ---"
+java -cp "bin$LIBCP" SnpRankModelTest || FAILED=1
 echo
 echo "--- ServerSecurityTest ---"
 java -cp "bin$LIBCP" ServerSecurityTest || FAILED=1

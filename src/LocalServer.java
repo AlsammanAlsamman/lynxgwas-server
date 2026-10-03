@@ -557,6 +557,10 @@ public class LocalServer {
             BatchRun br = batchRuns.get(projectId + "|" + queryParam(ex, "tool"));
             if (br != null) br.cancelled = true;
             respond(ex, 200, "application/json", "{\"ok\":true}".getBytes());
+        } else if (action.equals("heritability")) {
+            projectHeritability(ex, projectId, projectDir);
+        } else if (action.equals("heritability/run")) {
+            projectHeritabilityRun(ex, projectId, projectDir);
         } else if (action.equals("analysis/run")) {
             projectAnalysisRun(ex, projectId, projectDir);
         } else if (action.startsWith("analysis/job/")) {
@@ -1721,6 +1725,276 @@ public class LocalServer {
     }
 
     /**
+     * Causal-SNP ranking for one locus (see SnpRankModel). Gathers each SNP's features from the locus's own
+     * saved runs, a joint (mvSuSiE) run that pooled this locus, CADD, LD scores, Roadmap peaks and the gene
+     * annotation, scores them with tools/snp_rank_model.json when a trained model exists, and writes
+     * result.tsv (one row per SNP, best first) plus provenance.json. Param joint_job restricts the joint
+     * features to runs made on one cross-dataset run (used to keep training free of label leakage).
+     */
+    private PluginEngine.RunResult runSnpRank(String projectId, Config cfg, Locus locus, Map<String, String> params,
+                                              String jobId, File runDir, File harmonizedDir, ProgressTracker pt) throws Exception {
+        PluginEngine.RunResult res = new PluginEngine.RunResult();
+        res.jobId = jobId; res.tool = "snp_rank"; res.runDir = runDir.getAbsolutePath();
+        String jointJob = params.getOrDefault("joint_job", "").trim();
+        File harm = new File(harmonizedDir, "harmonized_gwas.tsv");
+        if (!harm.isFile()) throw new IOException("Build the locus inputs first (harmonized_gwas.tsv not found)");
+        String chr = locus.chr.replaceFirst("^chr", "");
+
+        // 1. SNPs of the locus
+        List<String> hl = Files.readAllLines(harm.toPath());
+        List<String> hh = Arrays.asList(hl.get(0).split("\t", -1));
+        int iId = hh.indexOf("snp_id"), iPos = hh.indexOf("pos"), iEa = hh.indexOf("ea"), iNea = hh.indexOf("nea"), iP = hh.indexOf("pvalue");
+        int iRs = hh.indexOf("rsid");
+        List<String[]> snps = new ArrayList<>();          // {id, pos, ea, nea, p}
+        Map<Long, Integer> byPos = new HashMap<>();
+        double maxLogp = 0;
+        for (int r = 1; r < hl.size(); r++) {
+            String[] f = hl.get(r).split("\t", -1);
+            if (f.length < hh.size()) continue;
+            long pos;
+            try { pos = Long.parseLong(f[iPos]); } catch (NumberFormatException e) { continue; }
+            if (byPos.containsKey(pos)) continue;
+            double p;
+            try { p = Double.parseDouble(f[iP]); } catch (NumberFormatException e) { p = Double.NaN; }
+            double lp = p > 0 ? -Math.log10(p) : (p == 0 ? 320 : 0);
+            maxLogp = Math.max(maxLogp, lp);
+            byPos.put(pos, snps.size());
+            String shown = iRs >= 0 && f[iRs].startsWith("rs") ? f[iRs] : f[iId];
+            snps.add(new String[]{shown, String.valueOf(pos), f[iEa].toUpperCase(), f[iNea].toUpperCase(), String.valueOf(lp)});
+        }
+        if (snps.isEmpty()) throw new IOException("No SNPs in the harmonised locus file");
+        int n = snps.size();
+        double[][] x = new double[n][SnpRankModel.FEATURES.length];
+        int F_SUSIE = 0, F_CS = 1, F_ABF = 2, F_COJO = 3, F_LOGP = 4, F_JOINT = 5, F_HASJ = 6, F_CADD = 7, F_LD = 8,
+            F_K27 = 9, F_K4M1 = 10, F_K4M3 = 11, F_CODING = 12, F_UTR = 13, F_TSS = 14, F_MAGMA = 15;
+        for (int i = 0; i < n; i++) x[i][F_LOGP] = maxLogp > 0 ? Double.parseDouble(snps.get(i)[4]) / maxLogp : 0;
+
+        // 2. This locus's latest fine-mapping and MAGMA runs
+        pt.update("Reading fine-mapping results", 1, 4);
+        Map<String, RunSummary> latest = latestRuns(cfg, locus);
+        File runsDir = new File(BaseStepPipeline.analysisDir(cfg, locus), "runs");
+        List<String> missing = new ArrayList<>();
+        for (String[] t : new String[][]{{"susie_finemapping", "susie_pip", "susie_cs"}, {"finemap", "finemap_pip", ""}, {"cojo_conditional", "cojo_selected", ""}}) {
+            RunSummary rs = latest.get(t[0]);
+            if (rs == null) { missing.add(t[0]); continue; }
+            List<String> rl = Files.readAllLines(new File(new File(runsDir, rs.runId), "result.tsv").toPath());
+            List<String> rh = Arrays.asList(rl.get(0).split("\t", -1));
+            int ip = rh.indexOf("pos"), iv = rh.indexOf(t[1]), ic = t[2].isEmpty() ? -1 : rh.indexOf(t[2]);
+            for (int r = 1; r < rl.size(); r++) {
+                String[] f = rl.get(r).split("\t", -1);
+                if (f.length < rh.size() || ip < 0 || iv < 0) continue;
+                Integer i;
+                try { i = byPos.get(Long.parseLong(f[ip])); } catch (NumberFormatException e) { continue; }
+                if (i == null) continue;
+                if (t[0].equals("cojo_conditional")) x[i][F_COJO] = f[iv].equalsIgnoreCase("selected") ? 1 : 0;
+                else {
+                    double v;
+                    try { v = Double.parseDouble(f[iv]); } catch (NumberFormatException e) { continue; }
+                    x[i][t[0].equals("finemap") ? F_ABF : F_SUSIE] = v;
+                    if (ic >= 0 && !f[ic].isEmpty() && !f[ic].equals("NA") && !f[ic].equals("0")) x[i][F_CS] = 1;
+                }
+            }
+        }
+        if (missing.contains("susie_finemapping"))
+            throw new IOException("Run SuSiE on this locus first (the ranking uses its PIPs)");
+        Map<String, Double> magmaLogp = new HashMap<>();
+        double magmaMax = 0;
+        RunSummary mg = latest.get("magma_gene");
+        if (mg != null) {
+            List<String> rl = Files.readAllLines(new File(new File(runsDir, mg.runId), "result.tsv").toPath());
+            List<String> rh = Arrays.asList(rl.get(0).split("\t", -1));
+            for (int r = 1; r < rl.size(); r++) {
+                String[] f = rl.get(r).split("\t", -1);
+                try {
+                    double v = -Math.log10(Math.max(1e-300, Double.parseDouble(f[rh.indexOf("magma_p")])));
+                    magmaLogp.put(f[rh.indexOf("gene")], v);
+                    magmaMax = Math.max(magmaMax, v);
+                } catch (Exception ignored) {}
+            }
+        }
+
+        // 3. Joint fine-mapping (mvSuSiE) that pooled this dataset's locus: within-disease preferred
+        ensureMvsusieIndex();
+        MvsusieSaved joint = null;
+        for (MvsusieSaved s : mvsusieSaved.values()) {
+            if (!"done".equals(s.status) || !Integer.valueOf(locus.index).equals(s.datasetLoci.get(projectId))) continue;
+            if (!jointJob.isEmpty() && !jointJob.equals(s.job)) continue;
+            boolean better = joint == null
+                || ("within".equals(s.mode) && !"within".equals(joint.mode))
+                || (s.mode.equals(joint.mode) && s.created > joint.created);
+            if (better) joint = s;
+        }
+        if (joint != null) {
+            File rj = new File(new File(MVSUSIE_DIR, joint.id), "result.json");
+            if (rj.isFile()) {
+                Map<String, Object> o = MiniJson.asObject(MiniJson.parse(new String(Files.readAllBytes(rj.toPath()), "UTF-8")));
+                Object sp = o.get("snp_pips");
+                if (sp != null) {
+                    Map<String, Object> m = MiniJson.asObject(sp);
+                    List<Object> pos = MiniJson.asArray(m.get("pos")), pip = MiniJson.asArray(m.get("pip"));
+                    for (int k = 0; k < pos.size(); k++) {
+                        Integer i = byPos.get(((Number) pos.get(k)).longValue());
+                        if (i != null) x[i][F_JOINT] = Math.max(x[i][F_JOINT], ((Number) pip.get(k)).doubleValue());
+                    }
+                }
+                for (double[] row : x) row[F_HASJ] = 1;
+            }
+        }
+
+        // 4. Annotation: gene model, Roadmap peaks, LD score, CADD
+        pt.update("Annotating SNPs", 2, 4);
+        GffParser gff = cfg.gff3File != null && new File(cfg.gff3File).isFile() ? gffFuture(new File(cfg.gff3File).getAbsolutePath()).get() : null;
+        List<Gene> genes = gff == null ? Collections.emptyList() : gff.overlapping(chr, Math.max(0, locus.start - 1_000_000), locus.end + 1_000_000);
+        String eid = RegulatoryPeakIndex.resolveEid(projectId);
+        RegulatoryPeakIndex peaks = RegulatoryPeakIndex.instance();
+        File ldDir = GenomeHeritability.ldscDir();
+        String caddEnv = System.getenv("LYNXGWAS_CADD");   // CADD v1.6 GRCh37 prescored SNVs (tabix); optional
+        File cadd = caddEnv != null && !caddEnv.isEmpty() ? new File(caddEnv)
+            : new File(SusieAdapter.appRoot(), "resources/cadd/gnomad.genomes.r2.1.1.snv.tsv.gz");
+        long lo = Long.MAX_VALUE, hi = 0;
+        for (String[] s : snps) { long p = Long.parseLong(s[1]); lo = Math.min(lo, p); hi = Math.max(hi, p); }
+        Map<String, Double> caddMap = SnpRankModel.caddRegion(cadd, chr, lo, hi);
+        String[] nearestGene = new String[n];
+        for (int i = 0; i < n; i++) {
+            String[] s = snps.get(i);
+            long pos = Long.parseLong(s[1]);
+            long best = Long.MAX_VALUE;
+            for (Gene g : genes) {
+                Transcript t = g.canonical();
+                long tss = t != null ? ("-".equals(t.strand) ? t.end : t.start) : ("-".equals(g.strand) ? g.end : g.start);
+                long d = Math.abs(tss - pos);
+                if (d < best) { best = d; nearestGene[i] = g.geneName; }
+                for (Transcript tr : g.transcripts) {
+                    for (Exon e : tr.cds) if (pos >= e.start && pos <= e.end) x[i][F_CODING] = 1;
+                    for (Exon e : tr.utrs) if (pos >= e.start && pos <= e.end) x[i][F_UTR] = 1;
+                }
+            }
+            x[i][F_TSS] = Math.log10(1 + (best == Long.MAX_VALUE ? 1_000_000 : best));
+            if (eid != null) {
+                x[i][F_K27] = peaks.peaksOverlapping(eid, "H3K27ac", chr, pos, pos).isEmpty() ? 0 : 1;
+                x[i][F_K4M1] = peaks.peaksOverlapping(eid, "H3K4me1", chr, pos, pos).isEmpty() ? 0 : 1;
+                x[i][F_K4M3] = peaks.peaksOverlapping(eid, "H3K4me3", chr, pos, pos).isEmpty() ? 0 : 1;
+            }
+            double ld = SnpRankModel.ldScoreLog(ldDir, chr, pos);
+            x[i][F_LD] = Double.isNaN(ld) ? Math.log1p(30) : ld;     // HapMap3 median-like default when no nearby SNP
+            double c = SnpRankModel.caddFor(caddMap, chr, pos, s[2], s[3]);
+            x[i][F_CADD] = Double.isNaN(c) ? 2.0 : c;                // unscored SNVs: typical background PHRED
+            Double mgv = nearestGene[i] == null ? null : magmaLogp.get(nearestGene[i]);
+            x[i][F_MAGMA] = mgv != null && magmaMax > 0 ? mgv / magmaMax : 0;
+        }
+
+        // 5. Score with the trained model, if any
+        pt.update("Scoring", 3, 4);
+        SnpRankModel.Model model = SnpRankModel.load(new File(SusieAdapter.appRoot(), "tools/snp_rank_model.json"));
+        double[] score = new double[n];
+        String[] why = new String[n];
+        Integer[] order = new Integer[n];
+        List<Map<String, Double>> contrib = new ArrayList<>();
+        Map<String, Double> meanContrib = new HashMap<>();
+        for (int i = 0; i < n; i++) {
+            order[i] = i;
+            if (model == null) { score[i] = x[i][F_SUSIE]; why[i] = "no trained model: SuSiE PIP"; contrib.add(null); continue; }
+            Map<String, Double> fx = new LinkedHashMap<>();
+            for (int k = 0; k < SnpRankModel.FEATURES.length; k++) fx.put(SnpRankModel.FEATURES[k], x[i][k]);
+            score[i] = model.conditional() ? model.linear(fx) : SnpRankModel.sigmoid(model.linear(fx));
+            Map<String, Double> c = model.contributions(fx);
+            contrib.add(c);
+            for (Map.Entry<String, Double> e : c.entrySet()) meanContrib.merge(e.getKey(), e.getValue() / n, Double::sum);
+        }
+        for (int i = 0; i < n && model != null; i++) {
+            Map<String, Double> rel = new LinkedHashMap<>();
+            for (Map.Entry<String, Double> e : contrib.get(i).entrySet()) rel.put(e.getKey(), e.getValue() - meanContrib.get(e.getKey()));
+            List<Map.Entry<String, Double>> cs = new ArrayList<>(rel.entrySet());
+            cs.sort((a, b) -> Double.compare(b.getValue(), a.getValue()));
+            StringBuilder sb = new StringBuilder();
+            for (int k = 0; k < Math.min(3, cs.size()); k++) {
+                if (cs.get(k).getValue() <= 0) break;
+                if (sb.length() > 0) sb.append("; ");
+                sb.append(SnpRankModel.LABEL.get(cs.get(k).getKey())).append(String.format(Locale.ROOT, " +%.2f", cs.get(k).getValue()));
+            }
+            why[i] = sb.toString();
+        }
+        if (model != null && model.conditional()) {
+            // softmax over the locus: each score is the probability that this SNP is the locus's causal SNP
+            double mx = Double.NEGATIVE_INFINITY, z = 0;
+            for (double v : score) mx = Math.max(mx, v);
+            for (int i = 0; i < n; i++) { score[i] = Math.exp(score[i] - mx); z += score[i]; }
+            for (int i = 0; i < n; i++) score[i] /= z;
+        }
+        // ties broken by significance, as in training
+        Arrays.sort(order, (a, b) -> score[b] != score[a] ? Double.compare(score[b], score[a]) : Double.compare(x[b][F_LOGP], x[a][F_LOGP]));
+        try (PrintWriter pw = new PrintWriter(new OutputStreamWriter(new FileOutputStream(new File(runDir, "result.tsv")), "UTF-8"))) {
+            StringBuilder h = new StringBuilder("snp_id\tchr\tpos\tea\tnea\tlogp\tnearest_gene");
+            for (String fName : SnpRankModel.FEATURES) h.append('\t').append(fName);
+            pw.println(h.append("\tscore\trank\ttop_reasons"));
+            int rank = 0;
+            for (int i : order) {
+                String[] s = snps.get(i);
+                StringBuilder row = new StringBuilder();
+                row.append(s[0]).append('\t').append(chr).append('\t').append(s[1]).append('\t').append(s[2]).append('\t').append(s[3])
+                   .append('\t').append(String.format(Locale.ROOT, "%.4g", Double.parseDouble(s[4])))
+                   .append('\t').append(nearestGene[i] == null ? "" : nearestGene[i]);
+                for (double v : x[i]) row.append('\t').append(String.format(Locale.ROOT, "%.5g", v));
+                row.append('\t').append(String.format(Locale.ROOT, "%.5g", score[i])).append('\t').append(++rank).append('\t').append(why[i]);
+                pw.println(row);
+            }
+        }
+        try (PrintWriter pw = new PrintWriter(new OutputStreamWriter(new FileOutputStream(new File(runDir, "provenance.json")), "UTF-8"))) {
+            pw.printf(Locale.ROOT, "{%n  \"job_id\": \"%s\",%n  \"tool\": \"snp_rank\",%n  \"tool_version\": \"1.0\",%n  \"timestamp\": %d,%n"
+                + "  \"params\": {\"joint_job\": \"%s\"},%n  \"model\": \"%s\",%n  \"joint_run\": \"%s\",%n  \"missing_runs\": \"%s\"%n}%n",
+                escJ(jobId), System.currentTimeMillis(), escJ(jointJob), model == null ? "" : escJ(model.version),
+                joint == null ? "" : escJ(joint.id), escJ(String.join(",", missing)));
+        }
+        res.ok = true;
+        res.resultRows = n;
+        return res;
+    }
+
+    /**
+     * Local SNP-heritability of one locus (HESS) by tools/r/hess_local.R, which reads the locus's harmonised
+     * GWAS and matched reference panel and writes result.tsv (one row); provenance.json is added here.
+     */
+    private PluginEngine.RunResult runHeritabilityLocal(Config cfg, Locus locus, Map<String, String> params, String jobId,
+                                                        File runDir, File harmonizedDir, File matchedDir,
+                                                        ProgressTracker pt) throws Exception {
+        PluginEngine.RunResult res = new PluginEngine.RunResult();
+        res.jobId = jobId; res.tool = "heritability_local"; res.runDir = runDir.getAbsolutePath();
+        int kMax = 50;
+        try { kMax = Integer.parseInt(params.getOrDefault("k_max", "50")); } catch (NumberFormatException ignored) {}
+        File script = new File(SusieAdapter.appRoot(), "tools/r/hess_local.R");
+        if (!script.isFile()) throw new IOException("Missing " + script.getAbsolutePath());
+        File harmonized = new File(harmonizedDir, "harmonized_gwas.tsv");
+        if (!harmonized.isFile()) throw new IOException("Build the locus inputs first (harmonized_gwas.tsv not found)");
+        String lib = System.getenv("LYNXGWAS_R_LIB");
+        File manifest = new File(runDir, "hess_manifest.json");
+        Files.write(manifest.toPath(), String.format(Locale.ROOT,
+            "{\"harmonized\":\"%s\",\"matched_ref\":\"%s\",\"sample_n\":%d,\"k_max\":%d,\"run_dir\":\"%s\",\"extra_lib\":\"%s\","
+            + "\"n_cases\":%d,\"n_controls\":%d,\"n_col\":\"%s\"}",
+            escJ(harmonized.getAbsolutePath().replace('\\', '/')), escJ(new File(matchedDir, "matched_ref").getAbsolutePath().replace('\\', '/')),
+            cfg.sampleN, kMax, escJ(runDir.getAbsolutePath().replace('\\', '/')), escJ(lib == null ? "" : lib.replace('\\', '/')),
+            cfg.nCases, cfg.nControls, escJ(cfg.colN)).getBytes("UTF-8"));
+        pt.update("Local heritability (HESS)", 2, 4);
+        ProcessBuilder pb = new ProcessBuilder(ToolLocator.rscript(), script.getAbsolutePath(), manifest.getAbsolutePath())
+            .directory(runDir).redirectErrorStream(true).redirectOutput(new File(runDir, "run.log"));
+        Process proc = pb.start();
+        if (!proc.waitFor(10, java.util.concurrent.TimeUnit.MINUTES)) { proc.destroyForcibly(); throw new IOException("Local heritability timed out after 10 minutes"); }
+        File out = new File(runDir, "result.tsv");
+        if (proc.exitValue() != 0 || !out.isFile()) {
+            String why = "";
+            for (String l : Files.readAllLines(new File(runDir, "run.log").toPath())) if (l.startsWith("ERROR:")) why = l.substring(6).trim();
+            throw new IOException(why.isEmpty() ? "hess_local.R failed; see run.log" : why);
+        }
+        try (PrintWriter pw = new PrintWriter(new OutputStreamWriter(new FileOutputStream(new File(runDir, "provenance.json")), "UTF-8"))) {
+            pw.printf(Locale.ROOT, "{%n  \"job_id\": \"%s\",%n  \"tool\": \"heritability_local\",%n  \"tool_version\": \"1.0\",%n"
+                + "  \"timestamp\": %d,%n  \"params\": {\"k_max\": \"%d\", \"sample_n\": \"%d\"}%n}%n",
+                escJ(jobId), System.currentTimeMillis(), kMax, cfg.sampleN);
+        }
+        res.ok = true;
+        res.resultRows = 1;
+        return res;
+    }
+
+    /**
      * MAGMA gene-based test on one locus. MAGMA is a native binary driven by MagmaAdapter in Java
      * (annotate, then the gene test against the locus's matched reference panel), so it bypasses the
      * R-script plugin path but leaves the same run folder behind: result.tsv (one row per gene, best
@@ -1779,6 +2053,66 @@ public class LocalServer {
         return res;
     }
 
+    // ── Genome-wide SNP-heritability (LD score regression) ─────────────────────
+    //
+    // POST /api/project/{id}/heritability/run   starts LDSC for the project in the background
+    // GET  /api/project/{id}/heritability       {"ldsc": <saved result or null>, "status": ..., "local": {...}}
+    //   "local" sums the latest per-locus heritability (heritability_local tool) over the project's loci.
+
+    /** Status of a running or finished LDSC job per project: phase text, or "error: ..." / "done". */
+    private final Map<String, String> ldscStatus = new ConcurrentHashMap<>();
+
+    private void projectHeritabilityRun(HttpExchange ex, String projectId, String projectDir) throws IOException {
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            respond(ex, 405, "application/json", "{\"error\":\"POST required\"}".getBytes()); return;
+        }
+        String st = ldscStatus.get(projectId);
+        if (st != null && !st.equals("done") && !st.startsWith("error")) {
+            respond(ex, 409, "application/json", "{\"error\":\"Heritability is already being estimated for this project\"}".getBytes()); return;
+        }
+        final Config cfg;
+        try { cfg = Config.loadFromProject(projectDir); }
+        catch (Exception e) { respond(ex, 400, "application/json", ("{\"error\":\"" + escJ(e.getMessage()) + "\"}").getBytes()); return; }
+        ldscStatus.put(projectId, "starting");
+        String refused = ctx.jobs.start(SecurityGate.userId(ex), "ldsc-" + projectId, () -> {
+            try {
+                GenomeHeritability.run(cfg, GenomeHeritability.ldscDir(), (phase, step) -> ldscStatus.put(projectId, phase));
+                ldscStatus.put(projectId, "done");
+            } catch (Exception e) {
+                ldscStatus.put(projectId, "error: " + e.getMessage());
+            }
+        });
+        if (refused != null) { ldscStatus.remove(projectId); SecurityGate.deny(ex, 429, refused); return; }
+        respond(ex, 202, "application/json", "{\"status\":\"started\"}".getBytes());
+    }
+
+    private void projectHeritability(HttpExchange ex, String projectId, String projectDir) throws IOException {
+        Config cfg;
+        try { cfg = Config.loadFromProject(projectDir); }
+        catch (Exception e) { respond(ex, 400, "application/json", ("{\"error\":\"" + escJ(e.getMessage()) + "\"}").getBytes()); return; }
+        File f = GenomeHeritability.resultFile(cfg);
+        String ldsc = f.isFile() ? new String(Files.readAllBytes(f.toPath()), "UTF-8") : "null";
+        String st = ldscStatus.getOrDefault(projectId, f.isFile() ? "done" : "");
+        // Sum of the latest local (per-locus) heritability estimates
+        double sum = 0, var = 0;
+        int nLoci = 0, withH2 = 0;
+        ProjectState ps = ensureProjectState(projectId, projectDir);
+        if (ps != null && ps.loci != null) {
+            for (Locus l : ps.loci) {
+                nLoci++;
+                RunSummary rs = latestRuns(ps.config, l).get("heritability_local");
+                if (rs == null || Double.isNaN(rs.localH2)) continue;
+                withH2++;
+                sum += rs.localH2;
+                if (!Double.isNaN(rs.localH2Se)) var += rs.localH2Se * rs.localH2Se;
+            }
+        }
+        String local = String.format(Locale.ROOT, "{\"loci\":%d,\"loci_with_estimate\":%d,\"sum_h2\":%s,\"sum_h2_se\":%s}",
+            nLoci, withH2, withH2 > 0 ? String.format(Locale.ROOT, "%.6g", sum) : "null",
+            withH2 > 0 ? String.format(Locale.ROOT, "%.6g", Math.sqrt(var)) : "null");
+        respond(ex, 200, "application/json", ("{\"ldsc\":" + ldsc + ",\"status\":\"" + escJ(st) + "\",\"local\":" + local + "}").getBytes("UTF-8"));
+    }
+
     // ── Saved results: read finished runs back from disk ─────────────────────
 
     /** One finished run of one tool at one locus, summarised for display. */
@@ -1791,6 +2125,7 @@ public class LocalServer {
         int nSets;                                   // SuSiE/FINEMAP credible sets, COJO independent signals
         String reliability = "";                     // COJO: ok | suspect | likely_artifact
         String note = "";                            // COJO: why it is not reliable
+        double localH2 = Double.NaN, localH2Se = Double.NaN;   // heritability_local
         final List<String> setLines = new ArrayList<>();   // "CS1: 9 SNPs, lead rs123 (PIP 0.26)" / "rs123 (pJ 1e-12)"
 
         String toJson() {
@@ -1805,6 +2140,8 @@ public class LocalServer {
             j.append(",\"n_sets\":").append(nSets);
             j.append(",\"reliability\":\"").append(escJ(reliability)).append('"');
             j.append(",\"note\":\"").append(escJ(note)).append('"');
+            if (!Double.isNaN(localH2)) j.append(String.format(Locale.ROOT, ",\"h2_local\":%.6g,\"h2_local_se\":%s", localH2,
+                Double.isNaN(localH2Se) ? "null" : String.format(Locale.ROOT, "%.6g", localH2Se)));
             j.append(",\"sets\":[");
             for (int i = 0; i < setLines.size(); i++) { if (i > 0) j.append(','); j.append('"').append(escJ(setLines.get(i))).append('"'); }
             return j.append("]}").toString();
@@ -1838,6 +2175,33 @@ public class LocalServer {
         List<String> lines = Files.readAllLines(resultTsv.toPath());
         if (lines.isEmpty()) return rs;
         List<String> h = Arrays.asList(lines.get(0).split("\t", -1));
+        if (tool.equals("snp_rank")) {
+            // Rows are SNPs ranked best first: lead = top-ranked SNP, top_pip = its score; "sets" = top 5
+            int iS = h.indexOf("snp_id"), iPos = h.indexOf("pos"), iSc = h.indexOf("score"), iWhy = h.indexOf("top_reasons");
+            for (int r = 1; r < lines.size(); r++) {
+                String[] f = lines.get(r).split("\t", -1);
+                if (f.length < h.size()) continue;
+                rs.rows++;
+                if (rs.rows == 1) {
+                    rs.topSnp = f[iS]; rs.topPos = f[iPos];
+                    try { rs.topPip = Double.parseDouble(f[iSc]); } catch (NumberFormatException ignored) {}
+                }
+                if (rs.setLines.size() < 5) rs.setLines.add(f[iS] + ": score " + f[iSc] + (iWhy >= 0 && !f[iWhy].isEmpty() ? " (" + f[iWhy] + ")" : ""));
+            }
+            return rs;
+        }
+        if (tool.equals("heritability_local")) {
+            if (lines.size() > 1) {
+                String[] f = lines.get(1).split("\t", -1);
+                int iH = h.indexOf("h2_local"), iS = h.indexOf("h2_local_se"), iP = h.indexOf("p_h2"), iN = h.indexOf("n_snps");
+                try { rs.localH2 = Double.parseDouble(f[iH]); } catch (Exception ignored) {}
+                try { rs.localH2Se = Double.parseDouble(f[iS]); } catch (Exception ignored) {}
+                rs.rows = 1;
+                rs.note = String.format(Locale.ROOT, "local h2 %.3g (SE %.2g), p %s, %s SNPs", rs.localH2, rs.localH2Se,
+                    iP >= 0 ? f[iP] : "?", iN >= 0 ? f[iN] : "?");
+            }
+            return rs;
+        }
         if (tool.equals("magma_gene")) {
             // One row per gene, best first: lead = top gene; "sets" = genes significant after
             // Bonferroni across the genes tested at this locus, listed (up to 5) with their p-values.
@@ -2050,6 +2414,18 @@ public class LocalServer {
                     analysisRoot, restrictToFinemapped, pipThreshold);
             } else if (toolName.equals("gwama_meta")) {
                 GwamaAdapter.prepareRun(harmonizedDir, runDir);
+            } else if (toolName.equals("snp_rank")) {
+                PluginEngine.RunResult result = runSnpRank(projectId, cfg, targetLocus, params, jobId, runDir, harmonizedDir, pt);
+                analysisJobs.put(jobId, result);
+                pt.done = true;
+                pt.phase = result.ok ? "Complete" : "Error: " + result.error;
+                return result;
+            } else if (toolName.equals("heritability_local")) {
+                PluginEngine.RunResult result = runHeritabilityLocal(cfg, targetLocus, params, jobId, runDir, harmonizedDir, matchedDir, pt);
+                analysisJobs.put(jobId, result);
+                pt.done = true;
+                pt.phase = result.ok ? "Complete" : "Error: " + result.error;
+                return result;
             } else if (toolName.equals("magma_gene")) {
                 PluginEngine.RunResult result = runMagmaGene(cfg, targetLocus, params, jobId, runDir, harmonizedDir, matchedDir, pt);
                 analysisJobs.put(jobId, result);

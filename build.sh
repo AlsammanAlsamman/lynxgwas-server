@@ -51,6 +51,9 @@ javac -encoding UTF-8 -d bin -cp "bin$LIBCP" \
   src/analysis/ToolDescriptor.java \
   src/analysis/PluginEngine.java \
   src/analysis/ToolLocator.java \
+  src/analysis/LdscRegression.java \
+  src/analysis/GenomeHeritability.java \
+  src/analysis/SnpRankModel.java \
   src/analysis/PlinkRunner.java \
   src/analysis/GctaBinaryResolver.java \
   src/analysis/CojoAdapter.java \

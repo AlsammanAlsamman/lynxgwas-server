@@ -50,8 +50,15 @@ public class ProjectMetadata {
             return StaleReason.VERSION_CHANGED;
 
         String currentCore = computeCoreInputFingerprint(config, projectDir);
-        if (!currentCore.equals(stored.coreInputFingerprint))
-            return StaleReason.CORE_INPUT_CHANGED;
+        if (!currentCore.equals(stored.coreInputFingerprint)) {
+            // Projects stamped before fingerprint v2 hashed the whole config.properties. If that legacy
+            // fingerprint still matches, nothing changed: re-stamp with v2 instead of forcing a reprocess.
+            boolean legacyMatches = !stored.coreInputFingerprint.startsWith(FINGERPRINT_V2)
+                && computeCoreInputFingerprintLegacy(config, projectDir).equals(stored.coreInputFingerprint);
+            if (!legacyMatches) return StaleReason.CORE_INPUT_CHANGED;
+            stored.coreInputFingerprint = currentCore;
+            try { stored.save(projectDir); } catch (Exception ignored) {}
+        }
 
         String annotPath = new File(projectDir, "annotations.yaml").getAbsolutePath();
         String currentAnnot = computeAnnotationFingerprint(annotPath);
@@ -67,24 +74,50 @@ public class ProjectMetadata {
 
     // ── Core input fingerprint ───────────────────────────────────────────
 
+    /** Prefix of fingerprints computed from the core settings rather than the whole config file. */
+    static final String FINGERPRINT_V2 = "v2:";
+
     /**
-     * Covers: GWAS file, loci file, GFF3 file, config.properties itself,
-     * and reference panel files (size+mtime only for .bed/.bim/.fam).
+     * Covers: GWAS file, loci file, GFF3 file, the configuration settings that change the core outputs
+     * (input files, column mappings, reference panel, effect type, genome build, locus padding and splitting,
+     * LD settings), and reference panel files (size+mtime only for .bed/.bim/.fam).
+     *
+     * Dataset metadata used only by analysis tools (sample size, cases/controls, trait type, prevalence,
+     * ancestry, disease name, categories) and performance settings (threads, parallel jobs) are left out, so
+     * editing them does not force a full reprocess.
      */
     public static String computeCoreInputFingerprint(Config config, String projectDir) {
+        return FINGERPRINT_V2 + fingerprint(config, projectDir, false);
+    }
+
+    /** The pre-v2 fingerprint, which hashed the whole config.properties; kept to migrate old projects. */
+    static String computeCoreInputFingerprintLegacy(Config config, String projectDir) {
+        return fingerprint(config, projectDir, true);
+    }
+
+    /** The configuration settings that change the core pipeline outputs, in a fixed order. */
+    static String coreSettings(Config c) {
+        Object[] v = {c.gwasFile, c.lociFile, c.gff3File, c.refPanelPath, c.refPanelPopulation,
+            c.colChr, c.colPos, c.colPvalue, c.colRsid, c.colVarid, c.colEa, c.colNea, c.colBeta, c.colOr, c.colSe,
+            c.colN, c.colMaf, c.colInfo, c.topSnpFile, c.locusPadding, c.ldEnabled, c.ldTriangleBoundary,
+            c.ldR2Threshold, c.maxSnpsPerLocus, c.splitLdThreshold, c.splitMinDistBp, c.effectType, c.genomeBuild};
+        StringBuilder sb = new StringBuilder();
+        for (Object o : v) sb.append(o).append('\u0001');
+        return sb.toString();
+    }
+
+    private static String fingerprint(Config config, String projectDir, boolean wholeConfigFile) {
         Map<String, String> cache = loadFingerprintCache(projectDir);
         boolean cacheChanged = false;
 
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            if (!wholeConfigFile) digest.update(coreSettings(config).getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
             // Full SHA-256 for these files
-            String[] fullHashFiles = {
-                config.gwasFile,
-                config.lociFile,
-                config.gff3File,
-                new File(projectDir, "config.properties").getAbsolutePath()
-            };
+            String[] fullHashFiles = wholeConfigFile
+                ? new String[]{config.gwasFile, config.lociFile, config.gff3File, new File(projectDir, "config.properties").getAbsolutePath()}
+                : new String[]{config.gwasFile, config.lociFile, config.gff3File};
 
             for (String path : fullHashFiles) {
                 File f = new File(path);

@@ -1,0 +1,11 @@
+tool: heritability_local
+version: "1.0"
+label: "Local heritability (HESS)"
+description: "SNP-heritability of this locus from its z-scores and the reference-panel LD (HESS, eigen-truncated quadratic form). Observed scale; summed over loci it gives the heritability explained by the GWAS loci, to compare with the genome-wide LD score regression estimate."
+language: java
+command: "hess_local.R"
+requires: [harmonized_gwas, matched_ref]
+params:
+  - {name: k_max, type: int, default: "50", label: "Max LD eigenvectors (k)", description: "Upper limit on the eigenvectors of the locus LD matrix used by the estimator."}
+output_mapping:
+  - {raw: h2_local, as: h2_local, scope: per_locus, type: double}
