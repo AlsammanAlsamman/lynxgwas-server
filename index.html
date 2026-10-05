@@ -55,7 +55,7 @@ main { max-width: 1600px; margin: 0 auto; padding: 1.5rem 2rem; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ── Table ───────────────────────────────────────── */
-.table-wrap { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); overflow: hidden; min-height: 300px; }
+.table-wrap { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); overflow-x: auto; overflow-y: hidden; min-height: 300px; }
 .btn-danger { background: #dc2626; color: #fff; }
 .btn-danger:hover { background: #b91c1c; }
 table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
@@ -69,8 +69,11 @@ tbody tr { border-bottom: 1px solid #f0f0f0; cursor: pointer; transition: backgr
 tbody tr:hover { background: #f0faf6; }
 td { padding: 0.35rem 0.45rem; white-space: nowrap; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
 td.desc { white-space: normal; color: #666; }
-td.actions { overflow: visible; max-width: none; white-space: nowrap; }
-td.actions button { margin-right: 0.3rem; }
+/* action buttons wrap inside their cell instead of running past the table's edge */
+td.actions { overflow: visible; max-width: none; white-space: normal; min-width: 230px; }
+td.actions button { margin: 0.12rem 0.3rem 0.12rem 0; }
+/* narrow windows: drop the two source-count columns so the actions still fit */
+@media (max-width: 1450px) { #project-table th:nth-child(5), #project-table td:nth-child(5), #project-table th:nth-child(6), #project-table td:nth-child(6) { display: none; } }
 
 /* ── Badges ──────────────────────────────────────── */
 .badge {
@@ -251,7 +254,7 @@ table.gsearch-table a.gsearch-open:hover { background: #0b5a46; }
 
   <p class="lx-scope-hint" id="scope-hint"></p>
   <div class="table-wrap">
-    <table>
+    <table id="project-table">
       <thead>
         <tr>
           <th>Name</th>
