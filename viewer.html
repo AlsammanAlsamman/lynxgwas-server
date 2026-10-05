@@ -192,6 +192,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .rank-table .rank-cap{color:#475569;margin-bottom:4px}
 .rank-table table{border-collapse:collapse;width:100%}
 .rank-table th{text-align:left;color:#075985;font-weight:600;border-bottom:1px solid #bae6fd;padding:2px 8px 2px 0;position:sticky;top:0;background:#f0f9ff}
+.rank-table td{padding:2px 8px 2px 0;color:#1e293b;font-variant-numeric:tabular-nums;white-space:nowrap}
+.rank-table td.why{white-space:normal;min-width:260px}
+.rank-table tr.rank-row{cursor:pointer}
+.rank-table tr.rank-row:hover td{background:#e0f2fe}
+.rank-table tr.rank-row.sel td{background:#0ea5e9;color:#fff}
+.rank-table th[title]{text-decoration:underline dotted;cursor:help}
+.rank-table .rank-more{margin-top:4px;font-size:11px;padding:1px 8px;border:1px solid #7dd3fc;border-radius:10px;background:#fff;color:#075985;cursor:pointer}
 .rank-table td{padding:2px 8px 2px 0;color:#1e293b;font-variant-numeric:tabular-nums}
 #genome-skyline svg{display:block}
 
@@ -852,6 +859,50 @@ function h2Chip(run) {
 }
 
 // ── Causal-SNP ranking: chip + ranked table with each SNP's main reasons ──
+// ── Ranking table → plot: the SNP clicked in the table is ringed, labelled and marked by a vertical line on
+//    the locus Manhattan plot. Kept in a global so a redraw (zoom, overlays) draws it again.
+let rankSelection = null;   // { locusId, id, pos, rank }
+
+function drawRankMark(g, data, xScale, yScale) {
+  g.selectAll('.rank-hl').remove();
+  if (!rankSelection || rankSelection.locusId !== data.id) return;
+  const s = (data.gwas_snps || []).find(x => x.pos === rankSelection.pos);
+  if (!s) return;
+  const x = xScale(s.pos), y = yScale(s.neg_log10_p);
+  const [x1, x2] = xScale.range();
+  if (!(x >= x1 && x <= x2)) return;
+  const hl = g.append('g').attr('class', 'rank-hl').style('pointer-events', 'none');
+  hl.append('line').attr('x1', x).attr('x2', x).attr('y1', yScale.range()[1]).attr('y2', yScale.range()[0])
+    .attr('stroke', '#0ea5e9').attr('stroke-width', 1.5).attr('stroke-dasharray', '4,3');
+  hl.append('circle').attr('cx', x).attr('cy', y).attr('r', 11)
+    .attr('fill', 'none').attr('stroke', '#0ea5e9').attr('stroke-width', 3);
+  hl.append('circle').attr('cx', x).attr('cy', y).attr('r', 5).attr('fill', '#0ea5e9').attr('stroke', '#fff').attr('stroke-width', 1.5);
+  const right = x > (x1 + x2) / 2;
+  const label = '#' + rankSelection.rank + ' ' + s.id + '  P=' + s.pvalue.toExponential(2);
+  const t = hl.append('text').attr('x', right ? x - 15 : x + 15).attr('y', Math.max(y - 12, yScale.range()[1] + 12))
+    .attr('text-anchor', right ? 'end' : 'start').attr('font-size', 11).attr('font-weight', 700).attr('fill', '#075985').text(label);
+  const bb = t.node().getBBox();
+  hl.insert('rect', 'text').attr('x', bb.x - 4).attr('y', bb.y - 2).attr('width', bb.width + 8).attr('height', bb.height + 4)
+    .attr('rx', 4).attr('fill', '#fff').attr('stroke', '#0ea5e9').attr('opacity', 0.95);
+}
+
+function setRankSelection(panelEl, snp) {
+  rankSelection = snp;
+  // redraw only the mark, on the Manhattan plot(s) of this panel
+  panelEl.querySelectorAll('g.rank-host').forEach(node => {
+    const st = node.__rankScales;
+    if (st) drawRankMark(d3.select(node), st.data, st.xScale, st.yScale);
+  });
+  if (snp) {
+    const host = panelEl.querySelector('g.rank-host');
+    const svg = host && host.ownerSVGElement;
+    if (svg) {
+      const r = svg.getBoundingClientRect();
+      if (r.top < 0 || r.top > window.innerHeight - 120) svg.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }
+}
+
 function rankChip(run, data, panelEl) {
   const chip = document.createElement('span');
   chip.className = 'fm-chip';
@@ -866,7 +917,7 @@ function rankChip(run, data, panelEl) {
   btn.textContent = open() ? 'Hide ranking' : 'Show ranking';
   btn.addEventListener('click', async () => {
     const existing = open();
-    if (existing) { existing.remove(); btn.textContent = 'Show ranking'; return; }
+    if (existing) { existing.remove(); btn.textContent = 'Show ranking'; setRankSelection(panelEl, null); return; }
     try {
       const r = await fetch(PROJECT_API + '/analysis/run-result?locus_id=' + encodeURIComponent(data.id)
         + '&run_id=' + encodeURIComponent(run.run_id));
@@ -882,21 +933,63 @@ function rankChip(run, data, panelEl) {
         + 'joint fine-mapping, CADD, LD score, histone peaks in the disease tissue, coding position, distance to the TSS, MAGMA, '
         + 'and replication in the other datasets of the same disease (credible sets, PIPs, top SNP, significance, effect direction). '
         + 'Score = probability that the SNP is this locus’s causal variant (scores sum to 1 over the locus). '
-        + 'Top 25 of ' + lines.length + ' SNPs; "why" lists what sets each SNP above the locus average.';
+        + 'Top 25 of ' + lines.length + ' SNPs; "why" lists what sets each SNP above the locus average. '
+        + 'Click a SNP to highlight it on the plot (click again to clear); hover a column name for its meaning.';
       const tbl = document.createElement('table');
       const tr0 = document.createElement('tr');
-      ['#', 'SNP', 'Score', 'SuSiE', 'Joint', 'CADD', 'Gene', 'Why'].forEach(t => { const th = document.createElement('th'); th.textContent = t; tr0.appendChild(th); });
+      // [header, tooltip]
+      [['#', 'Rank in this locus'], ['SNP', 'Click a row to highlight the SNP on the plot'], ['Score', 'Probability that this SNP is the locus’s causal variant'],
+       ['P', 'GWAS p-value'], ['Beta (SE)', 'Effect of the effect allele'], ['Alleles', 'Effect / other allele'], ['Position', 'Chromosome:position'],
+       ['r²', 'LD r² with the locus lead SNP'], ['SuSiE', 'SuSiE PIP (● = in a credible set)'], ['ABF', 'Approximate-Bayes-factor PIP'],
+       ['COJO', '✓ = selected as an independent signal'], ['Joint', 'Joint (mvSuSiE) PIP across datasets'], ['CADD', 'CADD v1.6 PHRED'],
+       ['Function', 'Coding / UTR position and histone peaks in the disease tissue'],
+       ['Other datasets', 'Other datasets of the same disease in the cross-dataset run: share with the SNP in a credible set, as their top SNP, genome-wide significant, with the same effect direction'],
+       ['Gene', 'Nearest gene'], ['Why', 'What sets this SNP above the locus average']]
+        .forEach(([t, tip]) => { const th = document.createElement('th'); th.textContent = t; th.title = tip; tr0.appendChild(th); });
       tbl.appendChild(tr0);
-      lines.slice(0, 25).forEach(l => {
+      const byPos = new Map((data.gwas_snps || []).map(s => [s.pos, s]));
+      const pct = v => isFinite(v) ? Math.round(v * 100) + '%' : '–';
+      const addRows = (from, to) => lines.slice(from, to).forEach(l => {
         const f = l.split('\t');
+        const v = c => Number(f[col(c)]);
+        const num = (c, k) => isFinite(v(c)) ? v(c).toFixed(k) : '';
+        const pos = v('pos'), g = byPos.get(pos);
+        const pval = g && isFinite(g.pvalue) ? g.pvalue : Math.pow(10, -v('logp'));
+        const fn = [v('coding') === 1 ? 'coding' : '', v('utr') === 1 ? 'UTR' : '', v('h3k27ac') === 1 ? 'K27ac' : '',
+                    v('h3k4me1') === 1 ? 'K4me1' : '', v('h3k4me3') === 1 ? 'K4me3' : ''].filter(Boolean).join(' · ');
+        const rep = v('has_xds') === 1
+          ? 'set ' + pct(v('xds_cs_frac')) + ' · top ' + pct(v('xds_lead_frac')) + ' · sig ' + pct(v('xds_sig_frac')) + ' · dir ' + pct(v('xds_dir_frac'))
+          : '–';
+        const r2 = g ? snpR2(g) : -1;
+        const cells = [f[col('rank')], f[col('snp_id')], num('score', 3), pval > 0 ? pval.toExponential(2) : '',
+          g && isFinite(g.beta) ? g.beta.toFixed(3) + (isFinite(g.se) ? ' (' + g.se.toFixed(3) + ')' : '') : '',
+          f[col('ea')] + '/' + f[col('nea')], f[col('chr')] + ':' + fmtN(pos), r2 >= 0 ? r2.toFixed(2) : '–',
+          num('susie_pip', 2) + (v('in_susie_cs') === 1 ? ' ●' : ''), num('abf_pip', 2), v('cojo_selected') === 1 ? '✓' : '',
+          v('has_joint') === 1 ? num('joint_pip', 2) : '–', num('cadd_phred', 1), fn || '–', rep, f[col('nearest_gene')], f[col('top_reasons')]];
         const tr = document.createElement('tr');
-        const num = (c, k) => { const v = Number(f[col(c)]); return isFinite(v) ? v.toFixed(k) : ''; };
-        [f[col('rank')], f[col('snp_id')], num('score', 3), num('susie_pip', 2), Number(f[col('has_joint')]) === 1 ? num('joint_pip', 2) : '–',
-         num('cadd_phred', 1), f[col('nearest_gene')], f[col('top_reasons')]]
-          .forEach(v => { const td = document.createElement('td'); td.textContent = v; tr.appendChild(td); });
+        tr.className = 'rank-row';
+        cells.forEach((c, i) => { const td = document.createElement('td'); td.textContent = c; if (i === cells.length - 1) td.className = 'why'; tr.appendChild(td); });
+        const snp = { locusId: data.id, id: f[col('snp_id')], pos, rank: f[col('rank')] };
+        if (rankSelection && rankSelection.locusId === data.id && rankSelection.pos === pos) tr.classList.add('sel');
+        tr.addEventListener('click', () => {
+          const same = tr.classList.contains('sel');
+          tbl.querySelectorAll('tr.sel').forEach(r => r.classList.remove('sel'));
+          if (same) { setRankSelection(panelEl, null); return; }
+          tr.classList.add('sel');
+          setRankSelection(panelEl, snp);
+        });
         tbl.appendChild(tr);
       });
+      let shown = Math.min(25, lines.length);
+      addRows(0, shown);
       wrap.append(cap, tbl);
+      if (lines.length > shown) {
+        const more = document.createElement('button');
+        more.className = 'rank-more';
+        more.textContent = 'Show all ' + lines.length + ' SNPs';
+        more.addEventListener('click', () => { addRows(shown, lines.length); shown = lines.length; more.remove(); });
+        wrap.appendChild(more);
+      }
       chip.closest('.fm-strip').insertAdjacentElement('afterend', wrap);
       btn.textContent = 'Hide ranking';
     } catch (e) { showToast('Could not load the ranking', 3000); }
@@ -2306,6 +2399,11 @@ function renderManhattan(g, data, xScale, yScale) {
   }
 
   drawFmGroups(g, snps, xScale, yScale);
+
+  // SNP picked in the causal-SNP ranking table
+  g.classed('rank-host', true);
+  g.node().__rankScales = { data, xScale, yScale };
+  drawRankMark(g, data, xScale, yScale);
 
   // Apply annotation channel overlays
   if (window.ANNOT && window.ANNOT.activeChannels &&
