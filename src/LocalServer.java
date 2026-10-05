@@ -586,6 +586,10 @@ public class LocalServer {
             BatchRun br = batchRuns.get(projectId + "|" + queryParam(ex, "tool"));
             if (br != null) br.cancelled = true;
             respond(ex, 200, "application/json", "{\"ok\":true}".getBytes());
+        } else if (action.equals("sample-size")) {
+            projectSampleSize(ex, projectId, projectDir);
+        } else if (action.equals("sample-size/apply")) {
+            projectSampleSizeApply(ex, projectId, projectDir);
         } else if (action.equals("heritability")) {
             projectHeritability(ex, projectId, projectDir);
         } else if (action.equals("heritability/run")) {
@@ -650,6 +654,7 @@ public class LocalServer {
                 respond(ex, 400, "application/json", "{\"error\":\"Upload the GWAS file first.\"}".getBytes()); return;
             }
             Config cfg = ConfigPolicy.apply(body, previous, new File(projectDir), ctx.cfg);
+            markSampleSizeChange(previous, cfg);
             cfg.writeProperties(cfgFile.getAbsolutePath());
             String name = extractStr(body, "_name"), desc = extractStr(body, "_desc");
             if (name != null && !name.trim().isEmpty() && name.length() <= 80 && !ServerApi.hasControl(name)
@@ -2117,10 +2122,10 @@ public class LocalServer {
         File manifest = new File(runDir, "hess_manifest.json");
         Files.write(manifest.toPath(), String.format(Locale.ROOT,
             "{\"harmonized\":\"%s\",\"matched_ref\":\"%s\",\"sample_n\":%d,\"k_max\":%d,\"run_dir\":\"%s\",\"extra_lib\":\"%s\","
-            + "\"n_cases\":%d,\"n_controls\":%d,\"n_col\":\"%s\"}",
+            + "\"n_cases\":%d,\"n_controls\":%d,\"n_col\":\"%s\",\"n_effective\":%d}",
             escJ(harmonized.getAbsolutePath().replace('\\', '/')), escJ(new File(matchedDir, "matched_ref").getAbsolutePath().replace('\\', '/')),
-            cfg.sampleN, kMax, escJ(runDir.getAbsolutePath().replace('\\', '/')), escJ(lib == null ? "" : lib.replace('\\', '/')),
-            cfg.nCases, cfg.nControls, escJ(cfg.colN)).getBytes("UTF-8"));
+            cfg.analysisN(), kMax, escJ(runDir.getAbsolutePath().replace('\\', '/')), escJ(lib == null ? "" : lib.replace('\\', '/')),
+            cfg.nCases, cfg.nControls, escJ(cfg.colN), cfg.nEffective).getBytes("UTF-8"));
         pt.update("Local heritability (HESS)", 2, 4);
         ProcessBuilder pb = new ProcessBuilder(ToolLocator.rscript(), script.getAbsolutePath(), manifest.getAbsolutePath())
             .directory(runDir).redirectErrorStream(true).redirectOutput(new File(runDir, "run.log"));
@@ -2167,7 +2172,7 @@ public class LocalServer {
         if (!ann.ok) throw new IOException(ann.error);
 
         pt.update("MAGMA: gene-based test", 3, 4);
-        MagmaAdapter.GeneAnalysisResult ga = MagmaAdapter.geneAnalysis(harmonizedDir, matchedDir, ann, runDir, cfg.sampleN, magmaBin);
+        MagmaAdapter.GeneAnalysisResult ga = MagmaAdapter.geneAnalysis(harmonizedDir, matchedDir, ann, runDir, cfg.analysisN(), magmaBin);
         if (!ga.ok) {
             if (ga.logTail != null && ga.logTail.contains("analysis failed for all genes"))
                 throw new IOException("No gene at this locus has SNPs left after MAGMA's QC within " + windowKb
@@ -2238,6 +2243,82 @@ public class LocalServer {
         });
         if (refused != null) { ldscStatus.remove(projectId); SecurityGate.deny(ex, 429, refused); return; }
         respond(ex, 202, "application/json", "{\"status\":\"started\"}".getBytes());
+    }
+
+    // ── Sample-size check: the N the standard errors imply vs the configured N ─────────────────
+    // GET  /api/project/{id}/sample-size[?cached_only=1]  -> SampleSizeCheck JSON (cached until the GWAS file or N changes)
+    // POST /api/project/{id}/sample-size/apply            -> sets the suggested effective N (or {"n_effective": N}; 0 clears it)
+    private void projectSampleSize(HttpExchange ex, String projectId, String projectDir) throws IOException {
+        Config cfg;
+        try { cfg = Config.loadFromProject(projectDir); }
+        catch (Exception e) { respond(ex, 404, "application/json", ("{\"error\":\"" + escJ(e.getMessage()) + "\"}").getBytes()); return; }
+        File f = SampleSizeCheck.resultFile(cfg);
+        if (f.isFile()) {
+            String j = new String(Files.readAllBytes(f.toPath()), "UTF-8");
+            Map<String, Object> m = MiniJson.asObject(MiniJson.parse(j));
+            if (SampleSizeCheck.key(cfg).replace("\\", "/").replace("\"", "'").equals(MiniJson.getStr(m, "key", ""))) {
+                respond(ex, 200, "application/json", j.getBytes("UTF-8"));
+                return;
+            }
+        }
+        if ("1".equals(queryParam(ex, "cached_only"))) {
+            respond(ex, 404, "application/json", "{\"error\":\"not checked yet\"}".getBytes());
+            return;
+        }
+        try {
+            respond(ex, 200, "application/json", SampleSizeCheck.run(cfg, GenomeHeritability.ldscDir()).getBytes("UTF-8"));
+        } catch (Exception e) {
+            respond(ex, 422, "application/json", ("{\"error\":\"" + escJ(String.valueOf(e.getMessage())) + "\"}").getBytes("UTF-8"));
+        }
+    }
+
+    private void projectSampleSizeApply(HttpExchange ex, String projectId, String projectDir) throws IOException {
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            respond(ex, 405, "application/json", "{\"error\":\"POST required\"}".getBytes()); return;
+        }
+        String body = new String(readAll(ex.getRequestBody()), "UTF-8");
+        try {
+            Config cfg = Config.loadFromProject(projectDir);
+            // body {"n_effective": N} sets that value, {"n_effective": 0} clears it; an empty body takes the check's suggestion
+            String sent = extractStr(body, "n_effective");
+            long ne;
+            if (sent != null && !sent.trim().isEmpty()) {
+                ne = parseLongOr(sent, -1);
+            } else {
+                File f = SampleSizeCheck.resultFile(cfg);
+                if (!f.isFile()) { respond(ex, 409, "application/json", "{\"error\":\"Run the sample-size check first\"}".getBytes()); return; }
+                Map<String, Object> m = MiniJson.asObject(MiniJson.parse(new String(Files.readAllBytes(f.toPath()), "UTF-8")));
+                Map<String, Object> s = MiniJson.asObject(m.get("suggested"));
+                ne = s.get("n_effective") instanceof Number ? ((Number) s.get("n_effective")).longValue() : 0;
+                if (ne <= 0) { respond(ex, 409, "application/json", "{\"error\":\"The check suggests no correction for this dataset\"}".getBytes()); return; }
+            }
+            if (ne < 0 || ne > 100_000_000L) {
+                respond(ex, 400, "application/json", "{\"error\":\"Invalid effective sample size\"}".getBytes()); return;
+            }
+            Config previous = Config.loadFromProject(projectDir);
+            cfg.nEffective = (int) ne;
+            markSampleSizeChange(previous, cfg);
+            cfg.writeProperties(new File(projectDir, "config.properties").getAbsolutePath());
+            Files.deleteIfExists(SampleSizeCheck.resultFile(cfg).toPath());
+            respond(ex, 200, "application/json", String.format(Locale.ROOT,
+                "{\"ok\":true,\"n_effective\":%d,\"sample_size_changed\":%d}", cfg.nEffective, cfg.sampleSizeChanged).getBytes("UTF-8"));
+        } catch (Exception e) {
+            respond(ex, 500, "application/json", ("{\"error\":\"" + escJ(String.valueOf(e.getMessage())) + "\"}").getBytes("UTF-8"));
+        }
+    }
+
+    private static long parseLongOr(String s, long dflt) {
+        try { return s == null || s.trim().isEmpty() ? dflt : Math.round(Double.parseDouble(s.trim())); } catch (NumberFormatException e) { return dflt; }
+    }
+
+    /** Keeps the time the sample size last changed, and sets it to now when N, cases, controls or the N column change:
+     *  every result computed before it used the old N (the project summary marks those as outdated). */
+    static void markSampleSizeChange(Config previous, Config cfg) {
+        if (previous == null) return;
+        if (cfg.sampleSizeChanged < previous.sampleSizeChanged) cfg.sampleSizeChanged = previous.sampleSizeChanged;
+        if (previous.sampleN != cfg.sampleN || previous.nCases != cfg.nCases || previous.nControls != cfg.nControls
+                || previous.nEffective != cfg.nEffective || !previous.colN.equals(cfg.colN))
+            cfg.sampleSizeChanged = System.currentTimeMillis();
     }
 
     private static File ldscErrorFile(Config cfg) {
@@ -2572,7 +2653,7 @@ public class LocalServer {
             File runDir = new File(analysisRoot, "runs/" + jobId);
             runDir.mkdirs();
 
-            int sampleN = cfg.sampleN;
+            int sampleN = cfg.analysisN();
 
             if (toolName.startsWith("cojo")) {
                 double pCutoff = 5e-8;

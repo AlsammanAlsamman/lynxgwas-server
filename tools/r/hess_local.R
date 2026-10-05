@@ -8,7 +8,8 @@
 #      to the panel's A1 (palindromic and multi-allelic SNPs dropped), monomorphic panel SNPs dropped;
 #      Sample size: the per-SNP N column when present (median after the filter), else the configured N;
 #      a PGC-style NEFF column (half the effective N; detected against the cases/controls) is doubled,
-#      the same rule as LYNXgwas's LD score regression;
+#      the same rule as LYNXgwas's LD score regression; an effective N set from the standard errors
+#      (project setting sample.n.effective) replaces all of these;
 #   2. full LD of the locus from the panel (bigsnpr), then SNPs whose z contradicts the LD removed: each
 #      z is predicted from all others under the regularised LD 0.9 R + 0.1 I (conditional mean and
 #      variance from its inverse, via Cholesky), and SNPs with an allele-switch log-likelihood ratio
@@ -54,6 +55,8 @@ if (ca > 0 && co > 0 && grepl("neff", tolower(man$n_col %||% ""))) {
   r_half <- n_used / (4 / (1 / ca + 1 / co))
   if (r_half > 0.4 && r_half < 0.6) { n_used <- 2 * n_used; n_def <- "PGC NEFF column doubled" }
 }
+n_eff <- as.numeric(man$n_effective %||% 0)
+if (is.finite(n_eff) && n_eff > 0) { n_used <- n_eff; n_def <- "effective N set from the standard errors" }
 if (!is.finite(n_used) || n_used <= 0) fail("Sample size (N) is required: set it in the project configuration")
 g$key <- paste0(sub("^chr", "", g$chr), ":", g$pos)
 g <- g[!duplicated(g$key) & g$key %in% bim$key, , drop = FALSE]

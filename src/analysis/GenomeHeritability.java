@@ -128,7 +128,15 @@ public final class GenomeHeritability {
         Arrays.sort(nm);
         double medN = nm[nm.length / 2];
         String nCol = cfg.colN.isEmpty() ? "" : cfg.colN;
-        if (caseControl) {
+        if (cfg.nEffective > 0) {
+            // effective N set from the standard errors (SampleSizeCheck): per-SNP N rescaled to it, sample prevalence 0.5
+            double scale = cfg.nEffective / medN;
+            for (int i = 0; i < nArr.length; i++) nArr[i] *= scale;
+            nDefinition = "effective sample size " + cfg.nEffective + " (set from the standard errors"
+                + (nCol.isEmpty() ? "" : "; per-SNP " + nCol + " rescaled to it") + ", sample prevalence 0.5)";
+            samplePrev = 0.5;
+            medN = cfg.nEffective;
+        } else if (caseControl) {
             double rHalf = medN / neffCC;
             if (nCol.toLowerCase().contains("neff") && rHalf > 0.4 && rHalf < 0.6) {
                 for (int i = 0; i < nArr.length; i++) nArr[i] *= 2;

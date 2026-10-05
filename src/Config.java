@@ -43,6 +43,11 @@ public class Config {
     public int    nControls         = 0;
     public String traitType         = "";     // "quantitative" or "binary"
     public double prevalence        = 0;      // population prevalence K (case-control), for liability-scale h2
+    /** The sample size the analyses use: the effective N when one is set, else the configured sample size. */
+    public int analysisN() { return nEffective > 0 ? nEffective : sampleN; }
+
+    public long sampleSizeChanged   = 0;      // when the sample size was last changed (epoch ms): results from before it used the old N
+    public int  nEffective          = 0;      // effective sample size for the analyses (0 = use sample.n / per-SNP N); see SampleSizeCheck
     public String effectType        = "";     // "beta", "OR", "logOR"
     public String genomeBuild       = "GRCh37";
     public String ancestry          = "";
@@ -144,6 +149,8 @@ public class Config {
         nControls          = Integer.parseInt(p.getProperty("n.controls", String.valueOf(nControls)));
         traitType          = p.getProperty("trait.type", traitType);
         try { prevalence = Double.parseDouble(p.getProperty("trait.prevalence", "0").trim()); } catch (NumberFormatException e) { prevalence = 0; }
+        try { sampleSizeChanged = Long.parseLong(p.getProperty("sample.size.changed", "0").trim()); } catch (NumberFormatException e) { sampleSizeChanged = 0; }
+        try { nEffective = Integer.parseInt(p.getProperty("sample.n.effective", "0").trim()); } catch (NumberFormatException e) { nEffective = 0; }
         effectType         = p.getProperty("effect.type", effectType);
         genomeBuild        = p.getProperty("genome.build", genomeBuild);
         ancestry           = p.getProperty("ancestry", ancestry.isEmpty() ? refPanelPopulation : ancestry);
@@ -209,6 +216,8 @@ public class Config {
         j.append(String.format(",\"n.controls\":%d", nControls));
         kv(j, "trait.type", traitType, false);
         kv(j, "trait.prevalence", prevalence > 0 ? String.valueOf(prevalence) : "", false);
+        kv(j, "sample.size.changed", sampleSizeChanged > 0 ? String.valueOf(sampleSizeChanged) : "", false);
+        kv(j, "sample.n.effective", nEffective > 0 ? String.valueOf(nEffective) : "", false);
         kv(j, "effect.type", effectType, false);
         kv(j, "genome.build", genomeBuild, false);
         kv(j, "ancestry", ancestry, false);
@@ -283,6 +292,8 @@ public class Config {
             pw.println("n.controls=" + nControls);
             pw.println("trait.type=" + traitType);
             if (prevalence > 0) pw.println("trait.prevalence=" + prevalence);
+            if (sampleSizeChanged > 0) pw.println("sample.size.changed=" + sampleSizeChanged);
+            if (nEffective > 0) pw.println("sample.n.effective=" + nEffective);
             pw.println("effect.type=" + effectType);
             pw.println("genome.build=" + genomeBuild);
             pw.println("ancestry=" + ancestry);
@@ -344,6 +355,8 @@ public class Config {
         if (!v.isEmpty()) nControls = Integer.parseInt(v);
         traitType          = jsonStr(json, "trait.type",   traitType);
         try { prevalence = Double.parseDouble(jsonStr(json, "trait.prevalence", String.valueOf(prevalence)).trim()); } catch (NumberFormatException e) { prevalence = 0; }
+        try { sampleSizeChanged = Long.parseLong(jsonStr(json, "sample.size.changed", String.valueOf(sampleSizeChanged)).trim()); } catch (NumberFormatException e) { /* keep */ }
+        try { String ne = jsonStr(json, "sample.n.effective", String.valueOf(nEffective)).trim(); nEffective = ne.isEmpty() ? 0 : (int) Math.round(Double.parseDouble(ne)); } catch (NumberFormatException e) { /* keep */ }
         effectType         = jsonStr(json, "effect.type",  effectType);
         genomeBuild        = jsonStr(json, "genome.build", genomeBuild);
         ancestry           = jsonStr(json, "ancestry",     ancestry);

@@ -115,7 +115,7 @@ table.list tr.click { cursor: pointer; } table.list tr.click:hover td { backgrou
     <div class="chart" id="matrix"></div>
     <div class="legend">
       <span><i style="background:var(--done)"></i>Done</span>
-      <span><i style="background:var(--stale)"></i>Done, but older than its inputs (re-run)</span>
+      <span><i style="background:var(--stale)"></i>Outdated: older than its inputs or the sample size (re-run)</span>
       <span><i style="background:var(--missing);border:1px solid #cbd5e1"></i>Not run yet</span>
       <span><i style="background:var(--failed)"></i>Failed (hover for the reason)</span>
       <span><i style="background:var(--mhc)"></i>MHC locus, skipped by default</span>
@@ -133,6 +133,9 @@ table.list tr.click { cursor: pointer; } table.list tr.click:hover td { backgrou
       <h2>Quality control</h2>
       <p class="lead">Is the inflation of test statistics due to real polygenic signal or to confounding (population structure, cryptic relatedness)?</p>
       <div id="qc-body"><p class="loading">Loading…</p></div>
+      <h3 style="font-size:0.92rem;margin:0.9rem 0 0.3rem">Sample size</h3>
+      <p class="lead" style="margin-bottom:0.4rem">Does the sample size the analyses use match what the standard errors of the summary statistics imply?</p>
+      <div id="n-body"><p class="loading">Checking…</p></div>
     </section>
   </div>
 
@@ -269,6 +272,7 @@ const chrN = c => { const v = String(c).replace(/^chr/i, ''); return v === 'X' ?
 
 async function loadSlow() {
   getJson(API + '/qc').then(renderQc);
+  loadN();
   loadReg(true);
   // joint runs: one lookup per locus, a few at a time
   const out = [];
@@ -288,9 +292,11 @@ async function loadSlow() {
 }
 
 // ── status of one tool at one locus ──────────────────────────────────
+const N_CHANGED = () => Number(S.cfg && S.cfg['sample.size.changed']) || 0;
 function status(l, t) {
   const r = l.runs[t.tool];
   if (r) {
+    if (r.timestamp < N_CHANGED()) return 'stale';
     if (t.inputs && t.inputs.some(i => l.runs[i] && l.runs[i].timestamp > r.timestamp)) return 'stale';
     return 'done';
   }
@@ -357,6 +363,7 @@ function renderSteps() {
     h('td', {}, h('div', { class: 'name', text: 'SNP-heritability (LDSC)' }), h('div', { class: 'what', text: 'Genome-wide, from all SNPs' })),
     h('td', {}), h('td', { class: 'count', text: ld ? 'done' : '–' }),
     h('td', {}, S.running.ldsc ? h('span', { class: 'pill run', text: S.running.ldsc })
+      : ld && ld.timestamp < N_CHANGED() ? h('span', { class: 'pill todo', text: 'Outdated' })
       : ld ? h('span', { class: 'pill ok', text: 'Done' })
       : /^error/.test((S.herit && S.herit.status) || '') ? h('span', { class: 'pill fail', text: 'Failed', title: S.herit.status })
       : h('span', { class: 'pill todo', text: 'Not run' }))));
@@ -388,9 +395,18 @@ function renderNext() {
       items.push({ t: t.label + ' failed at ' + c.failed + ' loci', d: reasons.join(' · '), fail: true,
         act: owner ? ['Retry', () => runTool(t, true)] : null, key: t.tool });
     }
-    if (c.stale) items.push({ t: 'Re-run ' + t.label + ' on ' + c.stale + ' loci', d: 'Its inputs (fine-mapping, COJO or MAGMA) were re-run after it, so its scores may be out of date.',
+    if (c.stale) items.push({ t: 'Re-run ' + t.label + ' on ' + c.stale + ' loci', d: N_CHANGED() && S.loci.some(l => l.runs[t.tool] && l.runs[t.tool].timestamp < N_CHANGED())
+        ? 'The sample size was changed after these results were computed.' : 'Its inputs (fine-mapping, COJO or MAGMA) were re-run after it, so its scores may be out of date.',
       act: owner ? ['Re-run all', () => runTool(t, false)] : null, key: t.tool });
   });
+  if (S.n && (S.n.verdict === 'mismatch' || S.n.verdict === 'review'))
+    items.push({ t: S.n.verdict === 'review' ? 'Review the sample size and effect scale' : 'Correct the sample size',
+      d: S.n.message, fail: true, key: 'nfix',
+      act: owner && S.n.verdict === 'mismatch' && S.n.suggested && S.n.suggested.n_effective > 0
+        ? ['Use effective N ' + fmtN(S.n.suggested.n_effective), () => applyN()] : null });
+  const ldOld = S.herit && S.herit.ldsc && S.herit.ldsc.timestamp < N_CHANGED();
+  if (ldOld) items.push({ t: 'Re-estimate SNP-heritability', d: 'The sample size was changed after it was estimated.',
+    act: owner ? ['Re-run', () => runLdsc()] : null, key: 'ldsc' });
   const ldscErr = S.herit && !S.herit.ldsc && /^error/.test(S.herit.status || '') ? S.herit.status.replace(/^error:\s*/, '') : '';
   if (ldscErr) items.push({ t: 'SNP-heritability could not be estimated', d: ldscErr, fail: true,
     act: owner ? ['Retry', () => runLdsc()] : null, key: 'ldsc' });
@@ -404,6 +420,7 @@ function renderNext() {
       link: ['Open Serpent Plot', 'serpent_plot.html'], info: !owner });
   const mhc = S.loci.filter(l => l.mhc).length;
   if (mhc) items.push({ t: mhc + ' MHC ' + (mhc === 1 ? 'locus is' : 'loci are') + ' skipped', d: 'The MHC region’s LD is too complex for these methods; it can still be run locus by locus from the viewer.', info: true });
+  items.sort((a, b) => (b.key === 'nfix') - (a.key === 'nfix'));
   if (!items.some(i => !i.info && !i.fail)) items.unshift({ t: 'Everything is up to date', d: 'All analyses have been run on every locus they apply to.', done: true });
   let n = 0;
   ul.replaceChildren(...items.map(i => h('li', {},
@@ -469,7 +486,7 @@ async function reloadSummary() {
 
 // ── charts ────────────────────────────────────────────────────────────
 const COLOR = { done: '#16a34a', stale: '#f59e0b', missing: '#e2e8f0', mhc: '#c4b5fd', blocked: '#fca5a5', failed: '#e11d48' };
-const SAY = { done: 'done', stale: 'done, but older than its inputs', missing: 'not run yet', mhc: 'MHC locus, skipped by default', blocked: 'inputs not built', failed: 'failed' };
+const SAY = { done: 'done', stale: 'outdated (older than its inputs or the sample size)', missing: 'not run yet', mhc: 'MHC locus, skipped by default', blocked: 'inputs not built', failed: 'failed' };
 
 function renderMatrix() {
   const box = document.getElementById('matrix');
@@ -605,6 +622,16 @@ function renderH2() {
     const total = ld ? ld.h2 : null, sum = lh.reduce((a, b) => a + Math.max(0, b.v), 0);
     if (total) kids.push(h('p', { class: 'fact' }, 'The ', h('b', { text: String(lh.length) }), ' loci with an estimate explain ',
       h('b', { text: Math.round(100 * sum / total) + '%' }), ' of the SNP-heritability (sum of local h² ' + sci(sum) + ' of ' + fmt(total, 3) + ', observed scale).'));
+    const warn = [];
+    if (total && sum > total) warn.push('The local estimates add up to more than the genome-wide SNP-heritability, which is impossible.');
+    const big = lh.filter(d => total ? d.v > 0.5 * total : d.v > 0.05);
+    if (big.length) warn.push((big.length === 1 ? locusName(big[0].l) + ' alone explains' : big.length + ' loci each explain')
+      + (total ? ' more than half of the SNP-heritability.' : ' more than 5% of the trait variance.'));
+    if (!total && sum > 0.5) warn.push('The local estimates add up to ' + fmt(sum, 2) + ' of the trait variance, implausibly high.');
+    if (warn.length) kids.push(h('p', { class: 'fact', style: 'color:#9f1239' }, h('b', { text: 'Check: ' }), warn.join(' ')
+      + ' The usual cause is a sample size that is too small for the file (see Sample size).'));
+    else kids.push(h('p', { class: 'fact', style: 'color:var(--ink2);font-size:0.8rem',
+      text: 'Loci are chosen because they are significant, so their local estimates tend to be biased upward (winner’s curse).' }));
     const top = lh.sort((a, b) => b.v - a.v).slice(0, 12);
     const W = 520, rowH = 19, m = { l: 150, r: 60, t: 4 }, H = m.t + top.length * rowH + 22;
     const x = d3.scaleLinear().domain([0, d3.max(top, d => d.v) || 1]).range([m.l, W - m.r]);
@@ -658,6 +685,42 @@ async function loadReg(cachedOnly) {
     return;
   }
   renderReg(null);
+}
+
+async function loadN() {
+  const box = document.getElementById('n-body');
+  const r = await fetch(API + '/sample-size').catch(() => null);
+  let d = null;
+  try { d = r ? await r.json() : null; } catch (e) {}
+  if (!r || !r.ok) { S.n = null; box.replaceChildren(h('p', { class: 'muted', text: (d && d.error) || 'The check could not run.' })); renderNext(); return; }
+  S.n = d;
+  const pillCls = { ok: 'ok', mismatch: 'fail', review: 'fail', unknown: 'todo' }[d.verdict] || 'no';
+  const pillTxt = { ok: 'Consistent', mismatch: 'Mismatch', review: 'Needs review', unknown: 'Not set' }[d.verdict] || d.verdict;
+  const tiles = [['Implied effective N', fmtN(Math.round(d.implied_neff / d.calibration)), 'from the standard errors'],
+                 ['Used by the analyses', fmtN(Math.round(d.configured)), d.n_effective_set > 0 ? 'effective N set for this project' : 'from the configured sample size'],
+                 ['Ratio', fmt(d.ratio, 2), 'implied / used (1 = consistent)']];
+  const owner = S.access === 'owner';
+  box.replaceChildren(
+    h('div', { class: 'tiles', style: 'margin-bottom:0.4rem' }, ...tiles.map(([k, v, s2]) => h('div', { class: 'tile' },
+      h('div', { class: 'k', text: k }), h('div', { class: 'v', text: v }), h('div', { class: 's', text: s2 })))),
+    h('p', { class: 'fact' }, h('span', { class: 'pill ' + pillCls, text: pillTxt }), ' ', d.message),
+    h('p', { class: 'what', style: 'color:var(--ink2);font-size:0.78rem;margin-top:0.3rem',
+      text: 'Basis: ' + d.basis + '; allele frequencies from ' + d.freq_source + '; effect scale: ' + d.scale + '; ' + fmtN(d.snps_used) + ' SNPs.' }),
+    owner && d.verdict === 'mismatch' && d.suggested && d.suggested.n_effective > 0
+      ? h('button', { class: 'btn primary', style: 'margin-top:0.4rem', text: 'Use effective N ' + fmtN(d.suggested.n_effective), onclick: () => applyN() }) : null,
+    owner && d.n_effective_set > 0
+      ? h('button', { class: 'btn', style: 'margin:0.4rem 0 0 0.4rem', text: 'Remove the effective N', onclick: () => applyN(0) }) : null);
+  renderNext();
+}
+async function applyN(value) {
+  const msg = value === 0 ? 'Remove the effective sample size? The analyses will use the configured N again, and the results computed with the effective N become outdated.'
+    : 'Set the effective sample size to ' + fmtN(S.n.suggested.n_effective) + '? The case and control counts stay as they are; every analysis that uses N (SuSiE, ABF, COJO, MAGMA, local and genome-wide heritability) becomes outdated and can then be re-run from this page.';
+  if (!confirm(msg)) return;
+  const r = await postJson(API + '/sample-size/apply', value === 0 ? { n_effective: '0' } : {});
+  if (!r.ok) { alert('Could not set it: ' + (r.data.error || r.status)); return; }
+  S.cfg = (await getJson(API + '/config')) || S.cfg;
+  await loadN();
+  render();
 }
 
 function renderReg(re) {

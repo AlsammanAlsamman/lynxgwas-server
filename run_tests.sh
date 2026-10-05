@@ -35,6 +35,7 @@ javac -encoding UTF-8 -d bin -cp "bin$LIBCP" \
   tests/LdscRegressionTest.java \
   tests/ProjectMetadataFingerprintTest.java \
   tests/SnpRankModelTest.java \
+  tests/SampleSizeCheckTest.java \
   tests/ServerSecurityTest.java \
   tests/ServerHttpTest.java \
   tests/MultiLocusResultPersistenceTest.java \
@@ -125,6 +126,10 @@ echo "--- ProjectMetadataFingerprintTest ---"
 java -cp "bin$LIBCP" ProjectMetadataFingerprintTest || FAILED=1
 echo "--- SnpRankModelTest ---"
 java -cp "bin$LIBCP" SnpRankModelTest || FAILED=1
+
+echo
+echo "--- SampleSizeCheckTest ---"
+java -cp "bin$LIBCP" SampleSizeCheckTest || FAILED=1
 echo
 echo "--- ServerSecurityTest ---"
 java -cp "bin$LIBCP" ServerSecurityTest || FAILED=1
