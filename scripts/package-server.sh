@@ -66,7 +66,7 @@ for d in rsid loci export catalog opentargets; do [ -d "bin/$d" ] && cp -r "bin/
 cp -r lib tools assets web "$OUT/app/"
 mkdir -p "$OUT/app/scripts" && cp scripts/ukbb_ld.py "$OUT/app/scripts/"   # UK Biobank LD reader (SuSiE, mvSuSiE)
 cp -r docs/images "$OUT/app/docs/"
-cp index.html viewer.html serpent_plot.html gene_constellation.html "$OUT/app/"
+cp index.html viewer.html serpent_plot.html gene_constellation.html summary.html "$OUT/app/"
 mkdir -p "$OUT/app/config"
 [ -f config/global.json ] && cp config/global.json "$OUT/app/config/global.json.example"
 cp server.properties.example LICENSE "$OUT/"

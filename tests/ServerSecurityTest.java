@@ -238,6 +238,11 @@ public class ServerSecurityTest {
         check(refused, "unknown genome build refused");
         String red = ConfigPolicy.redactedJson(c);
         check(!red.contains("/srv/ref") && !red.contains(proj.getAbsolutePath().replace("\\", "\\\\")), "config shown to the browser has no server paths");
+        // dataset metadata survives the redaction and a save that does not resend it
+        prev.prevalence = 0.06;
+        check(ConfigPolicy.redactedJson(prev).contains("\"trait.prevalence\":\"0.06\""), "prevalence is shown to the browser");
+        check(ConfigPolicy.apply("{\"col.chr\":\"CHR\",\"col.pos\":\"BP\",\"col.pvalue\":\"P\"}", prev, proj, sc).prevalence == 0.06,
+            "prevalence is kept when a save does not resend it");
     }
 
     static void uploads() throws Exception {

@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project Summary · LYNXgwas</title>
+<link rel="icon" type="image/png" href="docs/images/icon.png">
+<script src="assets/vendor/d3.v7.min.js"></script>
+<script src="lynx-server.js"></script>
+<style>
+:root {
+  --ink: #0f172a; --ink2: #475569; --ink3: #94a3b8; --line: #e2e8f0; --surface: #ffffff; --page: #f1f5f9;
+  --brand: #0F6E56; --brand2: #1a3a4a; --accent: #2563eb;
+  --done: #16a34a; --stale: #f59e0b; --missing: #e2e8f0; --mhc: #c4b5fd; --blocked: #fca5a5; --failed: #e11d48;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--page); color: var(--ink); font-size: 14px; }
+header { background: linear-gradient(135deg, var(--brand) 0%, var(--brand2) 100%); color: #fff; padding: 1rem 1.5rem;
+  display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+header a.back { color: #d1fae5; text-decoration: none; font-size: 1.3rem; }
+header h1 { font-size: 1.35rem; font-weight: 800; }
+header .sub { color: #cbd5e1; font-size: 0.85rem; margin-top: 2px; }
+header .grow { flex: 1; min-width: 200px; }
+.hbtn { background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.35); color: #fff; border-radius: 8px;
+  padding: 0.4rem 0.8rem; font-size: 0.85rem; cursor: pointer; text-decoration: none; }
+.hbtn:hover { background: rgba(255,255,255,0.25); }
+main { max-width: 1280px; margin: 0 auto; padding: 1.2rem 16px 3rem; }
+.ro-note { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; border-radius: 8px; padding: 0.55rem 0.8rem; margin-bottom: 1rem; font-size: 0.85rem; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 0.7rem; margin-bottom: 1.2rem; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 0.7rem 0.85rem; }
+.tile .k { color: var(--ink2); font-size: 0.78rem; font-weight: 600; }
+.tile .v { font-size: 1.35rem; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.tile .s { color: var(--ink2); font-size: 0.78rem; margin-top: 2px; }
+section.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; margin-bottom: 1.1rem; }
+section.card h2 { font-size: 1.05rem; margin-bottom: 0.2rem; }
+section.card .lead { color: var(--ink2); font-size: 0.85rem; margin-bottom: 0.8rem; max-width: 900px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.1rem; }
+@media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+.grid2 > section.card { margin-bottom: 0; }
+.row-gap { margin-bottom: 1.1rem; }
+/* progress checklist */
+.steps { width: 100%; border-collapse: collapse; }
+.steps td { padding: 0.5rem 0.5rem; border-top: 1px solid var(--line); vertical-align: middle; }
+.steps tr:first-child td { border-top: none; }
+.steps .name { font-weight: 600; white-space: nowrap; }
+.steps .what { color: var(--ink2); font-size: 0.8rem; }
+.steps .count { font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 0.85rem; }
+.bar { height: 9px; background: var(--missing); border-radius: 5px; overflow: hidden; display: flex; min-width: 140px; }
+.bar span { display: block; height: 100%; }
+.pill { display: inline-block; font-size: 0.72rem; font-weight: 700; border-radius: 10px; padding: 1px 8px; white-space: nowrap; }
+.pill.ok { background: #dcfce7; color: #166534; } .pill.todo { background: #fef3c7; color: #92400e; }
+.pill.no { background: #f1f5f9; color: #475569; } .pill.fail { background: #ffe4e6; color: #9f1239; } .pill.run { background: #dbeafe; color: #1e40af; }
+.btn { border: 1px solid #cbd5e1; background: #fff; border-radius: 7px; padding: 0.3rem 0.7rem; font-size: 0.8rem; cursor: pointer; white-space: nowrap; }
+.btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+.btn:disabled { opacity: 0.5; cursor: default; }
+.next { list-style: none; }
+.next li { display: flex; gap: 0.7rem; align-items: flex-start; padding: 0.55rem 0; border-top: 1px solid var(--line); }
+.next li:first-child { border-top: none; }
+.next .num { flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--brand); color: #fff; font-size: 0.75rem;
+  font-weight: 700; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
+.next .num.info { background: #94a3b8; }
+.next .txt { flex: 1; } .next .txt b { display: block; } .next .txt span { color: var(--ink2); font-size: 0.82rem; }
+.all-done { color: #166534; font-weight: 600; }
+/* charts */
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart text { font-size: 11px; fill: var(--ink2); }
+.chart .axis path, .chart .axis line { stroke: #cbd5e1; }
+.chart .gridl line { stroke: #eef2f7; }
+.legend { display: flex; flex-wrap: wrap; gap: 0.9rem; font-size: 0.78rem; color: var(--ink2); margin-top: 0.4rem; }
+.legend i { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+.fact { font-size: 0.85rem; color: var(--ink); margin-top: 0.6rem; }
+.fact b { font-variant-numeric: tabular-nums; }
+table.list { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+table.list th { text-align: left; color: var(--ink2); font-weight: 600; border-bottom: 1px solid var(--line); padding: 4px 8px 4px 0; }
+table.list td { padding: 4px 8px 4px 0; border-bottom: 1px solid #f1f5f9; font-variant-numeric: tabular-nums; }
+table.list tr.click { cursor: pointer; } table.list tr.click:hover td { background: #f8fafc; }
+.scroll { max-height: 330px; overflow: auto; }
+#tip { position: fixed; pointer-events: none; background: rgba(15,23,42,0.92); color: #f8fafc; font-size: 12px; padding: 6px 9px;
+  border-radius: 6px; display: none; z-index: 50; max-width: 340px; line-height: 1.4; }
+.muted { color: var(--ink3); }
+.loading { color: var(--ink3); font-style: italic; }
+</style>
+</head>
+<body>
+<header>
+  <a class="back" href="index.html" title="Back to projects">←</a>
+  <div class="grow">
+    <h1 id="title">Project summary</h1>
+    <div class="sub" id="subtitle">Loading…</div>
+  </div>
+  <a class="hbtn" id="open-viewer" href="#">Open locus viewer</a>
+  <a class="hbtn" id="dl-tsv" href="#" title="All per-locus results as a table">Download results (TSV)</a>
+</header>
+<main>
+  <div id="ro" class="ro-note" style="display:none">This is a read-only public dataset: you can explore every result, but analyses are run by the maintainers.
+    To analyse your own data, create a project under <b>My projects</b>.</div>
+  <div class="tiles" id="tiles"></div>
+
+  <div class="grid2 row-gap">
+    <section class="card">
+      <h2>What still needs to be run</h2>
+      <p class="lead">Suggested next steps, in the order that makes sense: later analyses use the results of earlier ones.</p>
+      <ul class="next" id="next"><li class="loading">Checking…</li></ul>
+    </section>
+    <section class="card">
+      <h2>Analysis progress</h2>
+      <p class="lead">How many loci each analysis has been run on. MHC loci are skipped by default (their LD is too complex for these methods).</p>
+      <table class="steps" id="steps"></table>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>Which loci have which results</h2>
+    <p class="lead">One column per locus (in genome order), one row per analysis. Hover a square for details; click it to open that locus in the viewer.</p>
+    <div class="chart" id="matrix"></div>
+    <div class="legend">
+      <span><i style="background:var(--done)"></i>Done</span>
+      <span><i style="background:var(--stale)"></i>Done, but older than its inputs (re-run)</span>
+      <span><i style="background:var(--missing);border:1px solid #cbd5e1"></i>Not run yet</span>
+      <span><i style="background:var(--failed)"></i>Failed (hover for the reason)</span>
+      <span><i style="background:var(--mhc)"></i>MHC locus, skipped by default</span>
+      <span><i style="background:var(--blocked)"></i>Inputs not built yet</span>
+    </div>
+  </section>
+
+  <div class="grid2 row-gap">
+    <section class="card">
+      <h2>Heritability</h2>
+      <p class="lead" id="h2-lead">How much of the variation in the trait the SNPs explain, genome-wide and locus by locus.</p>
+      <div id="h2-body"><p class="loading">Loading…</p></div>
+    </section>
+    <section class="card">
+      <h2>Quality control</h2>
+      <p class="lead">Is the inflation of test statistics due to real polygenic signal or to confounding (population structure, cryptic relatedness)?</p>
+      <div id="qc-body"><p class="loading">Loading…</p></div>
+    </section>
+  </div>
+
+  <div class="grid2 row-gap">
+    <section class="card">
+      <h2>Fine-mapping: how many signals per locus</h2>
+      <p class="lead">SuSiE credible sets per locus. One set means one independent causal signal; zero means the locus could not be resolved with this LD reference.</p>
+      <div class="chart" id="cs-count"></div>
+      <div class="fact" id="cs-fact"></div>
+    </section>
+    <section class="card">
+      <h2>Fine-mapping: how precise are the credible sets</h2>
+      <p class="lead">Number of SNPs in each 95% credible set. Smaller is better: a set of 1–5 SNPs points to a short list of candidate causal variants.</p>
+      <div class="chart" id="cs-size"></div>
+      <div class="fact" id="agree-fact"></div>
+    </section>
+  </div>
+
+  <div class="grid2 row-gap">
+    <section class="card">
+      <h2>Causal-SNP ranking: confidence per locus</h2>
+      <p class="lead">Score of each locus's top-ranked SNP: the probability that it is the locus's causal variant, combining fine-mapping, function, and replication in other datasets.</p>
+      <div class="chart" id="rank-dist"></div>
+    </section>
+    <section class="card">
+      <h2>Top causal-SNP candidates</h2>
+      <p class="lead">The most confident candidates across all loci. Click a row to open the locus.</p>
+      <div class="scroll" id="rank-top"></div>
+    </section>
+  </div>
+
+  <div class="grid2 row-gap">
+    <section class="card">
+      <h2>Genes (MAGMA)</h2>
+      <p class="lead">Loci with at least one gene significant in the gene-based test, with the strongest gene of each.</p>
+      <div class="scroll" id="magma"></div>
+    </section>
+    <section class="card">
+      <h2>Regulatory enrichment</h2>
+      <p class="lead" id="reg-lead">Are genome-wide-significant SNPs more often in active regulatory regions of the disease tissue than other SNPs? Odds ratio &gt; 1 means enriched.</p>
+      <div class="chart" id="reg"><p class="loading">Loading…</p></div>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>Joint fine-mapping across datasets (mvSuSiE)</h2>
+    <p class="lead">Loci of this dataset that were fine-mapped jointly with other datasets of a cross-dataset run. Joint runs are started from the Locus Serpent Plot.</p>
+    <div id="joint"><p class="loading">Checking…</p></div>
+  </section>
+</main>
+<div id="tip"></div>
+
+<script>
+'use strict';
+const PID = new URLSearchParams(location.search).get('project') || '';
+const API = '/api/project/' + encodeURIComponent(PID);
+const TOOLS = [
+  { tool: 'susie_finemapping', label: 'SuSiE fine-mapping', what: 'Credible sets of likely causal SNPs; several signals per locus' },
+  { tool: 'finemap', label: 'ABF fine-mapping', what: 'Single-signal approximate-Bayes-factor PIPs' },
+  { tool: 'cojo_conditional', label: 'COJO', what: 'Independent signals by conditional and joint analysis' },
+  { tool: 'magma_gene', label: 'MAGMA gene test', what: 'Which genes of the locus carry the association' },
+  { tool: 'heritability_local', label: 'Local heritability', what: 'Trait variance explained by each locus' },
+  { tool: 'snp_rank', label: 'Causal-SNP ranking', what: 'One score per SNP from all the evidence; run it last', inputs: ['susie_finemapping', 'finemap', 'cojo_conditional', 'magma_gene'] }
+];
+const LABEL = Object.fromEntries(TOOLS.map(t => [t.tool, t.label]));
+const S = { access: 'owner', running: {} };
+
+// ── small helpers ─────────────────────────────────────────────────────
+function h(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === 'text') e.textContent = v;
+    else if (k === 'class') e.className = v;
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else if (v !== undefined && v !== null) e.setAttribute(k, v);
+  }
+  kids.flat().forEach(c => { if (c != null) e.append(c instanceof Node ? c : document.createTextNode(String(c))); });
+  return e;
+}
+async function getJson(path) {
+  try { const r = await fetch(path); return r.ok ? await r.json() : null; } catch (e) { return null; }
+}
+async function postJson(path, body) {
+  const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+  let d = {}; try { d = await r.json(); } catch (e) {}
+  return { ok: r.ok, status: r.status, data: d };
+}
+const fmt = (v, k = 3) => (v == null || !isFinite(v)) ? '–' : Number(v).toFixed(k);
+const fmtN = v => (v == null || !isFinite(v)) ? '–' : Number(v).toLocaleString();
+const sci = v => (v == null || !isFinite(v)) ? '–' : (v < 1e-3 ? Number(v).toExponential(1) : Number(v).toPrecision(2));
+const tip = document.getElementById('tip');
+function showTip(ev, lines) {
+  tip.replaceChildren(...lines.map((l, i) => i === 0 ? h('b', {}, l) : h('div', {}, l)));
+  tip.style.display = 'block'; moveTip(ev);
+}
+function moveTip(ev) {
+  const w = tip.offsetWidth, x = ev.clientX + 14 + w > innerWidth ? ev.clientX - w - 14 : ev.clientX + 14;
+  tip.style.left = x + 'px'; tip.style.top = (ev.clientY + 14) + 'px';
+}
+const hideTip = () => { tip.style.display = 'none'; };
+const viewerUrl = idx => 'viewer.html?project=' + encodeURIComponent(PID) + (idx != null ? '&locus=' + idx : '');
+const locusName = l => 'Locus ' + l.index + (l.gene ? ' · ' + l.gene : '');
+
+// ── load ──────────────────────────────────────────────────────────────
+async function load() {
+  document.getElementById('open-viewer').href = viewerUrl(null);
+  document.getElementById('dl-tsv').href = API + '/analysis/summary?format=tsv';
+  const [cfg, manifest, summary, herit, base, access, projects] = await Promise.all([
+    getJson(API + '/config'), getJson(API + '/manifest'), getJson(API + '/analysis/summary'), getJson(API + '/heritability'),
+    getJson(API + '/analysis/base-status'), getJson(API + '/access'), getJson('/api/projects')]);
+  if (!summary || !summary.loci) {
+    document.getElementById('subtitle').textContent = 'Could not load this project (does it exist, and has its pipeline run?).';
+    return;
+  }
+  S.access = access && access.access ? access.access : 'owner';
+  S.cfg = cfg || {}; S.herit = herit;
+  S.meta = (Array.isArray(projects) ? projects : []).find(p => p.id === PID) || {};
+  const genes = new Map(((manifest && manifest.loci) || []).map(m => [m.index, m]));
+  const ready = new Map(((base && base.loci) || []).map(b => [b.index, b.ready]));
+  S.loci = summary.loci.map(l => {
+    const m = genes.get(l.index) || {};
+    return { ...normLocus(l, ready), gene: (m.nearest_genes || [])[0] || '', topSnp: m.top_snp || '', topP: m.top_snp_pval };
+  });
+  S.loci.sort((a, b) => chrN(a.chr) - chrN(b.chr) || a.start - b.start);
+  render();
+  loadSlow();
+}
+function normLocus(l, ready) {
+  return { ...l, runs: Object.fromEntries((l.runs || []).map(r => [r.tool, r])),
+           fails: Object.fromEntries((l.failures || []).map(f => [f.tool, f])),
+           ready: ready.has(l.index) ? ready.get(l.index) : true };
+}
+const chrN = c => { const v = String(c).replace(/^chr/i, ''); return v === 'X' ? 23 : v === 'Y' ? 24 : (parseInt(v, 10) || 25); };
+
+async function loadSlow() {
+  getJson(API + '/qc').then(renderQc);
+  loadReg(true);
+  // joint runs: one lookup per locus, a few at a time
+  const out = [];
+  const queue = S.loci.slice();
+  async function worker() {
+    while (queue.length) {
+      const l = queue.shift();
+      const d = await getJson('/api/mvsusie-for-dataset?project=' + encodeURIComponent(PID) + '&locus_index=' + l.index);
+      (d && d.runs || []).forEach(r => out.push({ locus: l, run: r }));
+    }
+  }
+  const [, jobs] = await Promise.all([Promise.all([1, 2, 3, 4, 5, 6].map(worker)), getJson('/api/locus-matrix-jobs')]);
+  S.jobNames = new Map((Array.isArray(jobs) ? jobs : []).map(j => [j.job_id, j.name]));
+  S.joint = out;
+  renderJoint();
+  renderNext();
+}
+
+// ── status of one tool at one locus ──────────────────────────────────
+function status(l, t) {
+  const r = l.runs[t.tool];
+  if (r) {
+    if (t.inputs && t.inputs.some(i => l.runs[i] && l.runs[i].timestamp > r.timestamp)) return 'stale';
+    return 'done';
+  }
+  if (l.fails && l.fails[t.tool]) return 'failed';
+  if (!l.ready) return 'blocked';
+  if (l.mhc) return 'mhc';
+  return 'missing';
+}
+function counts(t) {
+  const c = { done: 0, stale: 0, missing: 0, mhc: 0, blocked: 0, failed: 0 };
+  S.loci.forEach(l => c[status(l, t)]++);
+  return c;
+}
+
+// ── render ────────────────────────────────────────────────────────────
+function render() {
+  const name = S.meta.name || PID;
+  document.title = name + ' · Summary · LYNXgwas';
+  document.getElementById('title').textContent = 'Summary · ' + name;
+  const c = S.cfg;
+  const n = Number(c['sample.n']), nc = Number(c['n.cases']), nn = Number(c['n.controls']);
+  document.getElementById('subtitle').textContent = [S.meta.description, c['genome.build'], c['ancestry'] || c['ref.panel.population']]
+    .filter(Boolean).join(' · ');
+  document.getElementById('ro').style.display = S.access === 'owner' ? 'none' : 'block';
+  const ld = S.herit && S.herit.ldsc;
+  const sigLoci = S.loci.filter(l => l.topP != null && l.topP < 5e-8).length;
+  const tiles = [
+    ['Loci', fmtN(S.loci.length), sigLoci + ' genome-wide significant'],
+    ['SNPs', fmtN(S.meta.total_snps), 'in the loci'],
+    ['Sample size', fmtN(n), nc > 0 ? fmtN(nc) + ' cases · ' + fmtN(nn) + ' controls' : (c['trait.type'] || '')],
+    ['SNP-heritability', ld ? fmt(ld.h2_liability != null ? ld.h2_liability : ld.h2, 3) : '–',
+      ld ? (ld.h2_liability != null ? 'liability scale (SE ' + fmt(ld.h2_liability_se, 3) + ')' : 'observed scale (SE ' + fmt(ld.h2_se, 3) + ')') : 'not estimated yet'],
+    ['Confident causal SNPs', String(S.loci.filter(l => l.runs.snp_rank && l.runs.snp_rank.top_pip >= 0.5).length),
+      'loci whose top-ranked SNP scores ≥ 0.5'],
+    ['Fine-mapped', S.loci.filter(l => l.runs.susie_finemapping && l.runs.susie_finemapping.n_sets > 0).length + ' / ' + S.loci.length,
+      'loci with ≥1 SuSiE credible set']
+  ];
+  document.getElementById('tiles').replaceChildren(...tiles.map(([k, v, s]) => h('div', { class: 'tile' }, h('div', { class: 'k', text: k }),
+    h('div', { class: 'v', text: v }), h('div', { class: 's', text: s }))));
+  renderSteps(); renderNext(); renderMatrix(); renderH2(); renderCs(); renderRank(); renderMagma();
+}
+
+function renderSteps() {
+  const tb = document.getElementById('steps');
+  const rows = TOOLS.map(t => {
+    const c = counts(t), total = S.loci.length;
+    const bar = h('div', { class: 'bar', title: c.done + ' done, ' + c.stale + ' to re-run, ' + c.failed + ' failed, ' + c.missing + ' not run, ' + c.mhc + ' MHC, ' + c.blocked + ' without inputs' },
+      ...[['done', 'var(--done)'], ['stale', 'var(--stale)'], ['failed', 'var(--failed)'], ['mhc', 'var(--mhc)'], ['blocked', 'var(--blocked)']]
+        .map(([k, col]) => h('span', { style: 'width:' + (100 * c[k] / total) + '%;background:' + col })));
+    const todo = c.missing + c.stale;
+    const run = S.running[t.tool];
+    const pill = run ? h('span', { class: 'pill run', text: run })
+      : todo > 0 ? h('span', { class: 'pill todo', text: todo + ' to run' })
+      : c.failed > 0 ? h('span', { class: 'pill fail', text: 'Done · ' + c.failed + ' failed' })
+      : h('span', { class: 'pill ok', text: c.mhc ? 'Done (MHC skipped)' : 'Done' });
+    return h('tr', {},
+      h('td', {}, h('div', { class: 'name', text: t.label }), h('div', { class: 'what', text: t.what })),
+      h('td', {}, bar),
+      h('td', { class: 'count', text: (c.done + c.stale) + ' / ' + total }),
+      h('td', {}, pill));
+  });
+  const ld = S.herit && S.herit.ldsc;
+  rows.push(h('tr', {},
+    h('td', {}, h('div', { class: 'name', text: 'SNP-heritability (LDSC)' }), h('div', { class: 'what', text: 'Genome-wide, from all SNPs' })),
+    h('td', {}), h('td', { class: 'count', text: ld ? 'done' : '–' }),
+    h('td', {}, S.running.ldsc ? h('span', { class: 'pill run', text: S.running.ldsc })
+      : ld ? h('span', { class: 'pill ok', text: 'Done' })
+      : /^error/.test((S.herit && S.herit.status) || '') ? h('span', { class: 'pill fail', text: 'Failed', title: S.herit.status })
+      : h('span', { class: 'pill todo', text: 'Not run' }))));
+  tb.replaceChildren(...rows);
+}
+
+function renderNext() {
+  const ul = document.getElementById('next');
+  const items = [];
+  const owner = S.access === 'owner';
+  const blocked = S.loci.filter(l => !l.ready).length;
+  if (blocked) items.push({ t: 'Build the analysis inputs for ' + blocked + ' loci', d: 'Harmonised summary statistics and LD for each locus; every per-locus analysis needs them.',
+    act: owner ? ['Build inputs', () => buildBase()] : null, key: 'base' });
+  const susie = TOOLS[0];
+  TOOLS.forEach(t => {
+    const c = counts(t);
+    if (c.missing) {
+      let d = t.what + '.';
+      if (t.tool === 'snp_rank' && counts(susie).missing) d += ' Run SuSiE first: the ranking needs its PIPs.';
+      items.push({ t: 'Run ' + t.label + ' on ' + c.missing + ' loci', d, act: owner ? ['Run', () => runTool(t, true)] : null, key: t.tool });
+    }
+    if (c.failed) {
+      const why = {};
+      S.loci.filter(l => status(l, t) === 'failed').forEach(l => {
+        const e = (l.fails[t.tool].error || 'unknown error').replace(/\s+/g, ' ').replace(/\d+:\d+-\d+/g, '…');
+        why[e] = (why[e] || 0) + 1;
+      });
+      const reasons = Object.entries(why).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([e, k]) => k + '× ' + (e.length > 140 ? e.slice(0, 140) + '…' : e));
+      items.push({ t: t.label + ' failed at ' + c.failed + ' loci', d: reasons.join(' · '), fail: true,
+        act: owner ? ['Retry', () => runTool(t, true)] : null, key: t.tool });
+    }
+    if (c.stale) items.push({ t: 'Re-run ' + t.label + ' on ' + c.stale + ' loci', d: 'Its inputs (fine-mapping, COJO or MAGMA) were re-run after it, so its scores may be out of date.',
+      act: owner ? ['Re-run all', () => runTool(t, false)] : null, key: t.tool });
+  });
+  const ldscErr = S.herit && !S.herit.ldsc && /^error/.test(S.herit.status || '') ? S.herit.status.replace(/^error:\s*/, '') : '';
+  if (ldscErr) items.push({ t: 'SNP-heritability could not be estimated', d: ldscErr, fail: true,
+    act: owner ? ['Retry', () => runLdsc()] : null, key: 'ldsc' });
+  else if (!(S.herit && S.herit.ldsc)) items.push({ t: 'Estimate SNP-heritability', d: 'LD score regression over the whole GWAS (needs the European LD scores).',
+    act: owner ? ['Run', () => runLdsc()] : null, key: 'ldsc' });
+  const ld = S.herit && S.herit.ldsc;
+  if (ld && S.cfg['trait.type'] === 'binary' && !(Number(S.cfg['trait.prevalence']) > 0))
+    items.push({ t: 'Set the disease prevalence', d: 'Needed to report heritability on the liability scale. Set it with Edit on the home page, then re-run SNP-heritability.', info: true });
+  if (S.joint && S.joint.length === 0)
+    items.push({ t: 'Fine-map jointly with other datasets', d: 'Add this dataset to a cross-dataset run (Locus Serpent Plot), then run joint fine-mapping. It also adds replication evidence to the causal-SNP ranking.',
+      link: ['Open Serpent Plot', 'serpent_plot.html'], info: !owner });
+  const mhc = S.loci.filter(l => l.mhc).length;
+  if (mhc) items.push({ t: mhc + ' MHC ' + (mhc === 1 ? 'locus is' : 'loci are') + ' skipped', d: 'The MHC region’s LD is too complex for these methods; it can still be run locus by locus from the viewer.', info: true });
+  if (!items.some(i => !i.info && !i.fail)) items.unshift({ t: 'Everything is up to date', d: 'All analyses have been run on every locus they apply to.', done: true });
+  let n = 0;
+  ul.replaceChildren(...items.map(i => h('li', {},
+    h('span', { class: 'num' + (i.info || i.done ? ' info' : ''), style: i.fail ? 'background:var(--failed)' : null, text: i.done ? '✓' : i.info ? 'i' : i.fail ? '!' : String(++n) }),
+    h('div', { class: 'txt' }, h('b', { text: i.t, class: i.done ? 'all-done' : '' }), h('span', { text: i.d })),
+    i.act ? h('button', { class: 'btn primary', text: S.running[i.key] ? S.running[i.key] : i.act[0], disabled: S.running[i.key] ? '' : null, onclick: i.act[1] }) : null,
+    i.link ? h('a', { class: 'btn', href: i.link[1], text: i.link[0] }) : null)));
+}
+
+// ── actions (owner only; the server refuses them for read-only datasets) ──
+async function runTool(t, onlyMissing) {
+  S.running[t.tool] = 'Starting…'; renderSteps(); renderNext();
+  const r = await postJson(API + '/analysis/run-all', { tool: t.tool, only_missing: onlyMissing ? 'true' : 'false', parallel: '4' });
+  if (!r.ok) { delete S.running[t.tool]; alert('Could not start ' + t.label + ': ' + (r.data.error || r.status)); renderSteps(); renderNext(); return; }
+  for (;;) {
+    await new Promise(res => setTimeout(res, 3000));
+    const p = await getJson(API + '/analysis/run-all-progress?tool=' + encodeURIComponent(t.tool));
+    if (!p) continue;
+    S.running[t.tool] = 'Running ' + (p.done || 0) + ' / ' + (p.total || '?');
+    renderSteps(); renderNext();
+    if (p.finished) break;
+  }
+  delete S.running[t.tool];
+  await reloadSummary();
+}
+async function runLdsc() {
+  S.running.ldsc = 'Starting…'; renderSteps(); renderNext();
+  const r = await postJson(API + '/heritability/run', {});
+  if (!r.ok) { delete S.running.ldsc; alert('Could not start: ' + (r.data.error || r.status)); renderSteps(); renderNext(); return; }
+  for (;;) {
+    await new Promise(res => setTimeout(res, 4000));
+    const d = await getJson(API + '/heritability');
+    S.running.ldsc = 'Running…'; renderSteps(); renderNext();
+    if (d && (d.ldsc || /^(done|error)/.test(d.status || ''))) { S.herit = d; break; }
+  }
+  delete S.running.ldsc;
+  render();
+}
+async function buildBase() {
+  S.running.base = 'Starting…'; renderNext();
+  const r = await postJson(API + '/analysis/build-base', {});
+  if (!r.ok) { delete S.running.base; alert('Could not start: ' + (r.data.error || r.status)); renderNext(); return; }
+  for (;;) {
+    await new Promise(res => setTimeout(res, 3000));
+    const p = await getJson(API + '/analysis/build-base-progress');
+    if (!p) continue;
+    S.running.base = 'Building ' + (p.pct != null ? p.pct + '%' : '…'); renderNext();
+    if (p.done) break;
+  }
+  delete S.running.base;
+  await reloadSummary();
+}
+async function reloadSummary() {
+  const [summary, base] = await Promise.all([getJson(API + '/analysis/summary'), getJson(API + '/analysis/base-status')]);
+  if (summary && summary.loci) {
+    const ready = new Map(((base && base.loci) || []).map(b => [b.index, b.ready]));
+    const old = new Map(S.loci.map(l => [l.index, l]));
+    S.loci = summary.loci.map(l => ({ ...old.get(l.index), ...normLocus(l, ready) }));
+    S.loci.sort((a, b) => chrN(a.chr) - chrN(b.chr) || a.start - b.start);
+  }
+  render();
+}
+
+// ── charts ────────────────────────────────────────────────────────────
+const COLOR = { done: '#16a34a', stale: '#f59e0b', missing: '#e2e8f0', mhc: '#c4b5fd', blocked: '#fca5a5', failed: '#e11d48' };
+const SAY = { done: 'done', stale: 'done, but older than its inputs', missing: 'not run yet', mhc: 'MHC locus, skipped by default', blocked: 'inputs not built', failed: 'failed' };
+
+function renderMatrix() {
+  const box = document.getElementById('matrix');
+  const n = S.loci.length, W = Math.max(box.clientWidth || 900, 500);
+  const left = 140, cell = Math.max(3, Math.min(16, Math.floor((W - left - 10) / Math.max(n, 1))));
+  const gap = cell >= 8 ? 2 : 1, rowH = 18, top = 22;
+  const H = top + TOOLS.length * rowH + 4;
+  const svg = d3.create('svg').attr('viewBox', `0 0 ${left + n * cell + 10} ${H}`);
+  TOOLS.forEach((t, r) => svg.append('text').attr('x', left - 8).attr('y', top + r * rowH + rowH / 2 + 4).attr('text-anchor', 'end').text(t.label));
+  // chromosome labels at the first locus of each chromosome
+  let lastChr = null, lastLabelX = -1e9;
+  S.loci.forEach((l, i) => {
+    if (l.chr !== lastChr) {
+      const lx = left + i * cell;
+      if (lx - lastLabelX >= 34) { svg.append('text').attr('x', lx).attr('y', 12).attr('font-size', 10).text('chr' + l.chr); lastLabelX = lx; }
+      svg.append('line').attr('x1', left + i * cell - gap / 2).attr('x2', left + i * cell - gap / 2).attr('y1', 15).attr('y2', H).attr('stroke', '#e2e8f0');
+      lastChr = l.chr;
+    }
+  });
+  TOOLS.forEach((t, r) => {
+    S.loci.forEach((l, i) => {
+      const st = status(l, t), run = l.runs[t.tool];
+      svg.append('rect').attr('x', left + i * cell).attr('y', top + r * rowH + 2).attr('width', cell - gap).attr('height', rowH - 4)
+        .attr('rx', Math.min(3, cell / 4)).attr('fill', COLOR[st]).style('cursor', 'pointer')
+        .on('mousemove', ev => showTip(ev, [locusName(l) + ' (chr' + l.chr + ':' + fmtN(l.start) + ')', t.label + ': ' + SAY[st],
+          ...(run ? [describeRun(t.tool, run)] : []), ...(st === 'failed' ? [l.fails[t.tool].error] : [])]))
+        .on('mouseleave', hideTip)
+        .on('click', () => { location.href = viewerUrl(l.index); });
+    });
+  });
+  box.replaceChildren(svg.node());
+}
+function describeRun(tool, r) {
+  if (tool === 'heritability_local') return r.h2_local != null ? 'local h² ' + sci(r.h2_local) : '';
+  if (tool === 'snp_rank') return 'top ' + r.top_snp + ' (score ' + fmt(r.top_pip, 2) + ')';
+  if (tool === 'magma_gene') return r.top_snp ? 'top gene ' + r.top_snp + ', ' + r.n_sets + ' significant' : r.n_sets + ' significant genes';
+  if (tool === 'cojo_conditional') return r.n_sets + ' independent signal' + (r.n_sets === 1 ? '' : 's') + (r.reliability && r.reliability !== 'ok' ? ' (' + r.reliability + ')' : '');
+  return r.n_sets + ' credible set' + (r.n_sets === 1 ? '' : 's') + (r.top_snp ? ', lead ' + r.top_snp + ' (PIP ' + fmt(r.top_pip, 2) + ')' : '');
+}
+
+// vertical bar chart from [{label, value, color, tip}]
+function bars(el, data, { yLabel = '', height = 210 } = {}) {
+  const box = document.getElementById(el);
+  if (!data.length) { box.replaceChildren(h('p', { class: 'muted', text: 'No results yet.' })); return; }
+  const W = 520, H = height, m = { l: 40, r: 8, t: 18, b: 34 };
+  const x = d3.scaleBand().domain(data.map(d => d.label)).range([m.l, W - m.r]).padding(0.28);
+  const y = d3.scaleLinear().domain([0, d3.max(data, d => d.value) || 1]).nice().range([H - m.b, m.t]);
+  const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`);
+  svg.append('g').attr('class', 'gridl').attr('transform', `translate(${m.l},0)`).call(d3.axisLeft(y).ticks(4).tickSize(-(W - m.l - m.r)).tickFormat(''))
+    .call(g => g.select('.domain').remove());
+  svg.append('g').attr('class', 'axis').attr('transform', `translate(0,${H - m.b})`).call(d3.axisBottom(x).tickSizeOuter(0));
+  svg.append('g').attr('class', 'axis').attr('transform', `translate(${m.l},0)`).call(d3.axisLeft(y).ticks(4).tickFormat(d3.format('d'))).call(g => g.select('.domain').remove());
+  if (yLabel) svg.append('text').attr('x', 4).attr('y', 10).text(yLabel);
+  svg.selectAll('.b').data(data).join('path').attr('fill', d => d.color || '#2a78d6')
+    .attr('d', d => { const x0 = x(d.label), w = x.bandwidth(), y0 = y(d.value), y1 = y(0), r = Math.min(4, w / 2, y1 - y0);
+      return `M${x0},${y1}V${y0 + r}Q${x0},${y0} ${x0 + r},${y0}H${x0 + w - r}Q${x0 + w},${y0} ${x0 + w},${y0 + r}V${y1}Z`; })
+    .on('mousemove', (ev, d) => showTip(ev, [d.label, ...(d.tip || [d.value + ''])])).on('mouseleave', hideTip);
+  svg.selectAll('.v').data(data).join('text').attr('x', d => x(d.label) + x.bandwidth() / 2).attr('y', d => y(d.value) - 4)
+    .attr('text-anchor', 'middle').attr('fill', '#0f172a').attr('font-weight', 600).text(d => d.value);
+  box.replaceChildren(svg.node());
+}
+
+function renderCs() {
+  const fm = S.loci.map(l => l.runs.susie_finemapping).filter(Boolean);
+  const bins = ['0', '1', '2', '3', '4', '5+'];
+  const cnt = Object.fromEntries(bins.map(b => [b, 0]));
+  fm.forEach(r => cnt[r.n_sets >= 5 ? '5+' : String(r.n_sets)]++);
+  bars('cs-count', fm.length ? bins.map(b => ({ label: b, value: cnt[b], color: b === '0' ? '#cbd5e1' : '#2a78d6',
+    tip: [cnt[b] + ' loci with ' + b + ' credible set' + (b === '1' ? '' : 's')] })) : [], { yLabel: 'loci' });
+  const withSets = fm.filter(r => r.n_sets > 0).length;
+  const multi = fm.filter(r => r.n_sets > 1).length;
+  document.getElementById('cs-fact').replaceChildren(...(fm.length ? [h('span', {}, 'SuSiE found at least one credible set at ', h('b', { text: withSets + ' of ' + fm.length }),
+    ' fine-mapped loci; ', h('b', { text: String(multi) }), ' have more than one independent signal.')] : []));
+  // credible-set sizes, parsed from "CS1: 9 SNPs, lead …"
+  const sizes = [];
+  fm.forEach(r => (r.sets || []).forEach(s => { const m = /:\s*(\d+)\s+SNPs?/.exec(s); if (m) sizes.push(+m[1]); }));
+  const sb = [['1', v => v === 1], ['2–5', v => v >= 2 && v <= 5], ['6–20', v => v >= 6 && v <= 20], ['21–100', v => v > 20 && v <= 100], ['>100', v => v > 100]];
+  const sc = ['#15803d', '#22c55e', '#86efac', '#fcd34d', '#f59e0b'];
+  bars('cs-size', sizes.length ? sb.map(([lab, f], i) => ({ label: lab, value: sizes.filter(f).length, color: sc[i],
+    tip: [sizes.filter(f).length + ' credible sets of ' + lab + ' SNPs'] })) : [], { yLabel: 'credible sets' });
+  // agreement between methods on the lead SNP
+  const both = S.loci.filter(l => l.runs.susie_finemapping && l.runs.finemap && l.runs.susie_finemapping.top_snp && l.runs.finemap.top_snp);
+  const agree = both.filter(l => l.runs.susie_finemapping.top_snp === l.runs.finemap.top_snp).length;
+  document.getElementById('agree-fact').replaceChildren(...(both.length ? [h('span', {}, 'SuSiE and ABF pick the same lead SNP at ',
+    h('b', { text: agree + ' of ' + both.length }), ' loci (' + Math.round(100 * agree / both.length) + '%). Where they differ, the locus probably has more than one signal or LD the reference panel does not capture well.')] : []));
+}
+
+function renderRank() {
+  const rk = S.loci.filter(l => l.runs.snp_rank && l.runs.snp_rank.top_pip != null);
+  const bins = [['≥ 0.9', v => v >= 0.9, '#15803d', 'one SNP explains the locus'], ['0.5–0.9', v => v >= 0.5 && v < 0.9, '#22c55e', 'a clear favourite'],
+                ['0.2–0.5', v => v >= 0.2 && v < 0.5, '#fcd34d', 'a few candidates'], ['< 0.2', v => v < 0.2, '#f59e0b', 'many similar candidates']];
+  bars('rank-dist', rk.length ? bins.map(([lab, f, col, say]) => {
+    const k = rk.filter(l => f(l.runs.snp_rank.top_pip)).length;
+    return { label: lab, value: k, color: col, tip: [k + ' loci: ' + say] };
+  }) : [], { yLabel: 'loci' });
+  const top = rk.slice().sort((a, b) => b.runs.snp_rank.top_pip - a.runs.snp_rank.top_pip);
+  const box = document.getElementById('rank-top');
+  if (!top.length) { box.replaceChildren(h('p', { class: 'muted', text: 'Run the causal-SNP ranking to see candidates.' })); return; }
+  box.replaceChildren(h('table', { class: 'list' },
+    h('tr', {}, ...['Locus', 'Gene', 'Top SNP', 'Score', 'SuSiE PIP'].map(t => h('th', { text: t }))),
+    ...top.map(l => h('tr', { class: 'click', onclick: () => { location.href = viewerUrl(l.index); } },
+      h('td', { text: 'Locus ' + l.index + ' (chr' + l.chr + ')' }), h('td', { text: l.gene }), h('td', { text: l.runs.snp_rank.top_snp }),
+      h('td', { text: fmt(l.runs.snp_rank.top_pip, 2) }),
+      h('td', { text: l.runs.susie_finemapping ? fmt(l.runs.susie_finemapping.top_pip, 2) : '–' })))));
+}
+
+function renderMagma() {
+  const box = document.getElementById('magma');
+  const mg = S.loci.filter(l => l.runs.magma_gene);
+  if (!mg.length) { box.replaceChildren(h('p', { class: 'muted', text: 'MAGMA has not been run yet.' })); return; }
+  const sig = mg.filter(l => l.runs.magma_gene.n_sets > 0).sort((a, b) => b.runs.magma_gene.n_sets - a.runs.magma_gene.n_sets);
+  box.replaceChildren(
+    h('p', { class: 'fact' }, h('b', { text: sig.length + ' of ' + mg.length }), ' tested loci have at least one significant gene.'),
+    h('table', { class: 'list' }, h('tr', {}, ...['Locus', 'Strongest gene', 'Significant genes', 'Genes tested'].map(t => h('th', { text: t }))),
+      ...sig.map(l => h('tr', { class: 'click', onclick: () => { location.href = viewerUrl(l.index); } },
+        h('td', { text: 'Locus ' + l.index + ' (chr' + l.chr + ')' }), h('td', { text: l.runs.magma_gene.top_snp || '–' }),
+        h('td', { text: String(l.runs.magma_gene.n_sets) }), h('td', { text: String(l.runs.magma_gene.rows) })))));
+}
+
+function renderH2() {
+  const box = document.getElementById('h2-body');
+  const ld = S.herit && S.herit.ldsc, loc = S.herit && S.herit.local;
+  const kids = [];
+  if (ld) {
+    const liab = ld.h2_liability != null;
+    kids.push(h('p', { class: 'fact' }, 'Common SNPs explain ', h('b', { text: fmt(liab ? ld.h2_liability : ld.h2, 3) }),
+      liab ? ' of the liability to the disease (liability scale, prevalence ' + ld.prevalence + '; observed scale ' + fmt(ld.h2, 3) + ').'
+           : ' of the trait variance (observed scale).'));
+  } else kids.push(h('p', { class: 'muted', text: 'SNP-heritability has not been estimated yet.' }));
+  const lh = S.loci.filter(l => l.runs.heritability_local && l.runs.heritability_local.h2_local != null)
+    .map(l => ({ l, v: l.runs.heritability_local.h2_local, se: l.runs.heritability_local.h2_local_se }));
+  if (lh.length) {
+    const total = ld ? ld.h2 : null, sum = lh.reduce((a, b) => a + Math.max(0, b.v), 0);
+    if (total) kids.push(h('p', { class: 'fact' }, 'The ', h('b', { text: String(lh.length) }), ' loci with an estimate explain ',
+      h('b', { text: Math.round(100 * sum / total) + '%' }), ' of the SNP-heritability (sum of local h² ' + sci(sum) + ' of ' + fmt(total, 3) + ', observed scale).'));
+    const top = lh.sort((a, b) => b.v - a.v).slice(0, 12);
+    const W = 520, rowH = 19, m = { l: 150, r: 60, t: 4 }, H = m.t + top.length * rowH + 22;
+    const x = d3.scaleLinear().domain([0, d3.max(top, d => d.v) || 1]).range([m.l, W - m.r]);
+    const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`);
+    top.forEach((d, i) => {
+      const y = m.t + i * rowH;
+      svg.append('text').attr('x', m.l - 6).attr('y', y + 13).attr('text-anchor', 'end').text(locusName(d.l));
+      svg.append('rect').attr('x', m.l).attr('y', y + 3).attr('height', rowH - 7).attr('width', Math.max(1, x(d.v) - m.l)).attr('rx', 3)
+        .attr('fill', '#2a78d6').style('cursor', 'pointer')
+        .on('mousemove', ev => showTip(ev, [locusName(d.l), 'local h² ' + sci(d.v) + (d.se != null ? ' (SE ' + sci(d.se) + ')' : ''),
+          ...(total ? [(100 * d.v / total).toFixed(1) + '% of SNP-heritability'] : [])]))
+        .on('mouseleave', hideTip).on('click', () => { location.href = viewerUrl(d.l.index); });
+      svg.append('text').attr('x', x(d.v) + 5).attr('y', y + 13).text(sci(d.v));
+    });
+    svg.append('text').attr('x', m.l).attr('y', H - 4).text('Local heritability (observed scale), the 12 largest loci');
+    kids.push(h('div', { class: 'chart', style: 'margin-top:0.6rem' }, svg.node()));
+  } else kids.push(h('p', { class: 'muted', text: 'Local heritability has not been run yet.' }));
+  box.replaceChildren(...kids);
+}
+
+function renderQc(qc) {
+  const box = document.getElementById('qc-body');
+  const ld = S.herit && S.herit.ldsc;
+  const kids = [];
+  const lam = qc && qc.ok ? qc.lambda_gc : (ld ? ld.lambda_gc : null);
+  if (lam == null && !ld) { box.replaceChildren(h('p', { class: 'muted', text: 'QC has not been run yet (QC button on the home page).' })); return; }
+  const tiles = [['λGC', fmt(lam, 2), 'genomic inflation']];
+  if (ld) tiles.push(['LDSC intercept', fmt(ld.intercept, 3), 'SE ' + fmt(ld.intercept_se, 3)], ['Ratio', fmt(ld.ratio, 2), 'share of inflation not from polygenicity']);
+  kids.push(h('div', { class: 'tiles', style: 'margin-bottom:0.4rem' }, ...tiles.map(([k, v, s]) => h('div', { class: 'tile' },
+    h('div', { class: 'k', text: k }), h('div', { class: 'v', text: v }), h('div', { class: 's', text: s })))));
+  let say;
+  if (ld && isFinite(ld.intercept)) {
+    say = ld.intercept < 1.05
+      ? 'The LDSC intercept is close to 1, so the inflation (λGC ' + fmt(lam, 2) + ') comes mostly from genuine polygenic signal, not confounding.'
+      : ld.intercept < 1.15
+        ? 'The LDSC intercept is modestly above 1: most inflation is polygenic signal, with some confounding or sample overlap (common in large meta-analyses).'
+        : 'The LDSC intercept is well above 1: part of the inflation may be confounding. Check ancestry matching and sample overlap.';
+  } else say = lam > 1.1 ? 'λGC is above 1.1. Estimate SNP-heritability to see whether this is polygenicity or confounding.' : 'λGC is close to 1.';
+  kids.push(h('p', { class: 'fact', text: say }));
+  box.replaceChildren(...kids);
+}
+
+async function loadReg(cachedOnly) {
+  const box = document.getElementById('reg');
+  if (!cachedOnly) box.replaceChildren(h('p', { class: 'loading', text: 'Computing: scanning every SNP of the GWAS (about a minute)…' }));
+  const r = await fetch(API + '/regulatory-enrichment' + (cachedOnly ? '?cached_only=1' : '')).catch(() => null);
+  if (r && r.ok) { renderReg(await r.json()); return; }
+  if (r && r.status === 404 && cachedOnly) {
+    box.replaceChildren(h('p', { class: 'muted', text: 'Not computed yet for this dataset. It takes about a minute and is then saved.' }),
+      h('button', { class: 'btn primary', text: 'Compute enrichment', onclick: () => loadReg(false) }));
+    return;
+  }
+  renderReg(null);
+}
+
+function renderReg(re) {
+  const box = document.getElementById('reg');
+  if (!re || !re.marks || !re.marks.length) { box.replaceChildren(h('p', { class: 'muted', text: 'No regulatory enrichment available for this dataset.' })); return; }
+  document.getElementById('reg-lead').textContent = 'Are genome-wide-significant SNPs more often in active regulatory regions of ' + (re.tissue || 'the disease tissue')
+    + ' than other SNPs? Odds ratio > 1 means enriched.';
+  const W = 520, rowH = 34, m = { l: 90, r: 120, t: 6 }, H = m.t + re.marks.length * rowH + 26;
+  const max = Math.max(2, d3.max(re.marks, d => d.odds_ratio) || 1);
+  const x = d3.scaleLinear().domain([0, max]).nice().range([m.l, W - m.r]);
+  const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`);
+  svg.append('line').attr('x1', x(1)).attr('x2', x(1)).attr('y1', 0).attr('y2', H - 22).attr('stroke', '#94a3b8').attr('stroke-dasharray', '4,3');
+  svg.append('text').attr('x', x(1)).attr('y', H - 6).attr('text-anchor', 'middle').text('OR = 1 (no enrichment)');
+  re.marks.forEach((d, i) => {
+    const y = m.t + i * rowH, sig = d.p_value < 0.05;
+    svg.append('text').attr('x', m.l - 8).attr('y', y + 18).attr('text-anchor', 'end').attr('font-weight', 600).attr('fill', '#0f172a').text(d.mark);
+    svg.append('rect').attr('x', m.l).attr('y', y + 6).attr('height', rowH - 14).attr('width', Math.max(1, x(d.odds_ratio) - m.l)).attr('rx', 4)
+      .attr('fill', sig ? '#eb6834' : '#cbd5e1')
+      .on('mousemove', ev => showTip(ev, [d.mark + ' in ' + (re.tissue || ''), 'odds ratio ' + fmt(d.odds_ratio, 2) + ', p = ' + sci(d.p_value),
+        d.n_foreground_in_peak + ' of ' + fmtN(d.n_foreground_total) + ' significant SNPs in peaks']))
+      .on('mouseleave', hideTip);
+    svg.append('text').attr('x', x(d.odds_ratio) + 6).attr('y', y + 18).text('OR ' + fmt(d.odds_ratio, 2) + ' · p ' + sci(d.p_value));
+  });
+  box.replaceChildren(svg.node());
+}
+
+function renderJoint() {
+  const box = document.getElementById('joint');
+  const runs = S.joint || [];
+  if (!runs.length) { box.replaceChildren(h('p', { class: 'muted', text: 'No joint fine-mapping includes this dataset yet.' })); return; }
+  const loci = new Set(runs.map(r => r.locus.index));
+  const sameLead = new Set(runs.filter(r => r.run.lead_snp && r.locus.runs.susie_finemapping && r.run.lead_snp === r.locus.runs.susie_finemapping.top_snp)
+    .map(r => r.locus.index)).size;
+  box.replaceChildren(
+    h('p', { class: 'fact' }, h('b', { text: loci.size + ' of ' + S.loci.length }), ' loci were fine-mapped jointly with other datasets (' + runs.length + ' joint runs, in '
+      + new Set(runs.map(r => r.run.job)).size + ' cross-dataset run' + (new Set(runs.map(r => r.run.job)).size === 1 ? '' : 's') + '). At ',
+      h('b', { text: String(sameLead) }), ' of these loci the joint lead SNP is also this dataset’s own SuSiE lead.'),
+    h('div', { class: 'scroll', style: 'max-height:260px' }, h('table', { class: 'list' },
+      h('tr', {}, ...['Locus', 'Gene', 'Cross-dataset run', 'Mode', 'Datasets', 'Joint lead', 'Joint PIP', 'Own SuSiE lead'].map(t => h('th', { text: t }))),
+      ...runs.sort((a, b) => a.locus.index - b.locus.index).map(r => h('tr', { class: 'click', onclick: () => { location.href = viewerUrl(r.locus.index); } },
+        h('td', { text: 'Locus ' + r.locus.index }), h('td', { text: r.locus.gene }),
+        h('td', { text: (S.jobNames && S.jobNames.get(r.run.job)) || String(r.run.job || '').slice(0, 8) }),
+        h('td', { text: r.run.mode + (r.run.disease ? ' ' + r.run.disease : '') }), h('td', { text: String(r.run.n_datasets || (r.run.datasets || []).length || '') }),
+        h('td', { text: r.run.lead_snp || '–' }), h('td', { text: fmt(r.run.lead_pip, 2) }),
+        h('td', { text: r.locus.runs.susie_finemapping ? r.locus.runs.susie_finemapping.top_snp : '–' }))))));
+}
+
+let resizeT;
+addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(() => { if (S.loci) renderMatrix(); }, 200); });
+load();
+</script>
+</body>
+</html>

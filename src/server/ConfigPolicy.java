@@ -87,6 +87,7 @@ public final class ConfigPolicy {
         to.maxSnpsPerLocus = from.maxSnpsPerLocus; to.splitLdThreshold = from.splitLdThreshold; to.splitMinDistBp = from.splitMinDistBp;
         to.sampleN = from.sampleN; to.nCases = from.nCases; to.nControls = from.nControls; to.traitType = from.traitType;
         to.effectType = from.effectType; to.genomeBuild = from.genomeBuild; to.ancestry = from.ancestry; to.diseaseName = from.diseaseName;
+        to.prevalence = from.prevalence;
     }
 
     static boolean insideProject(String path, File projectDir) {

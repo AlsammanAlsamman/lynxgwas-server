@@ -927,6 +927,25 @@ public class LocalServer {
         String eid = RegulatoryPeakIndex.resolveEid(projectId);
         String tissue = eid == null ? null : RegulatoryPeakIndex.EID_TO_TISSUE.get(eid);
 
+        // The scan reads the whole GWAS file (a minute or more for large files), so the result is cached
+        // next to the project's other outputs, keyed by tissue, threshold and the GWAS file's size and date.
+        // ?cached_only=1 answers from the cache or with 404, never starting the scan.
+        File gwasForKey = new File(cfg.gwasFile);
+        String cacheKey = eid + "|" + threshold + "|" + gwasForKey.length() + "|" + gwasForKey.lastModified();
+        File cacheFile = new File(new File(cfg.outputDir), "regulatory_enrichment.json");
+        File cacheKeyFile = new File(new File(cfg.outputDir), "regulatory_enrichment.key");
+        try {
+            if (cacheFile.isFile() && cacheKeyFile.isFile()
+                    && cacheKey.equals(new String(Files.readAllBytes(cacheKeyFile.toPath()), "UTF-8").trim())) {
+                respond(ex, 200, "application/json", Files.readAllBytes(cacheFile.toPath()));
+                return;
+            }
+        } catch (IOException ignored) {}
+        if ("1".equals(queryParam(ex, "cached_only"))) {
+            respond(ex, 404, "application/json", "{\"error\":\"not computed yet\"}".getBytes());
+            return;
+        }
+
         List<RegulatoryEnrichmentAnalyzer.SnpPos> foreground = new ArrayList<>();
         List<RegulatoryEnrichmentAnalyzer.SnpPos> background = new ArrayList<>();
 
@@ -969,7 +988,15 @@ public class LocalServer {
 
         RegulatoryEnrichmentAnalyzer.Result result = RegulatoryEnrichmentAnalyzer.run(
             eid, tissue, threshold, foreground, background, RegulatoryPeakIndex.instance());
-        respond(ex, 200, "application/json", result.toJson().getBytes("UTF-8"));
+        byte[] json = result.toJson().getBytes("UTF-8");
+        if (eid != null) {
+            try {
+                cacheFile.getParentFile().mkdirs();
+                Files.write(cacheFile.toPath(), json);
+                Files.write(cacheKeyFile.toPath(), cacheKey.getBytes("UTF-8"));
+            } catch (IOException ignored) {}     // read-only data folder: just recompute next time
+        }
+        respond(ex, 200, "application/json", json);
     }
 
     private static String hitToJson(GwasCatalogLocalIndex.Hit h) {
@@ -2199,12 +2226,22 @@ public class LocalServer {
             try {
                 GenomeHeritability.run(cfg, GenomeHeritability.ldscDir(), (phase, step) -> ldscStatus.put(projectId, phase));
                 ldscStatus.put(projectId, "done");
+                Files.deleteIfExists(ldscErrorFile(cfg).toPath());
             } catch (Exception e) {
                 ldscStatus.put(projectId, "error: " + e.getMessage());
+                // kept on disk so the reason survives a restart (the project summary shows it)
+                try {
+                    ldscErrorFile(cfg).getParentFile().mkdirs();
+                    Files.write(ldscErrorFile(cfg).toPath(), String.valueOf(e.getMessage()).getBytes("UTF-8"));
+                } catch (IOException ignored) {}
             }
         });
         if (refused != null) { ldscStatus.remove(projectId); SecurityGate.deny(ex, 429, refused); return; }
         respond(ex, 202, "application/json", "{\"status\":\"started\"}".getBytes());
+    }
+
+    private static File ldscErrorFile(Config cfg) {
+        return new File(GenomeHeritability.resultFile(cfg).getParentFile(), "ldsc_error.txt");
     }
 
     private void projectHeritability(HttpExchange ex, String projectId, String projectDir) throws IOException {
@@ -2213,7 +2250,11 @@ public class LocalServer {
         catch (Exception e) { respond(ex, 400, "application/json", ("{\"error\":\"" + escJ(e.getMessage()) + "\"}").getBytes()); return; }
         File f = GenomeHeritability.resultFile(cfg);
         String ldsc = f.isFile() ? new String(Files.readAllBytes(f.toPath()), "UTF-8") : "null";
-        String st = ldscStatus.getOrDefault(projectId, f.isFile() ? "done" : "");
+        String st = ldscStatus.get(projectId);
+        if (st == null) {
+            File err = ldscErrorFile(cfg);
+            st = f.isFile() ? "done" : err.isFile() ? "error: " + new String(Files.readAllBytes(err.toPath()), "UTF-8").trim() : "";
+        }
         // Sum of the latest local (per-locus) heritability estimates
         double sum = 0, var = 0;
         int nLoci = 0, withH2 = 0;
@@ -2468,6 +2509,22 @@ public class LocalServer {
                .append(",\"mhc\":").append(BaseStepPipeline.overlapsMhc(l, ps.config.genomeBuild)).append(",\"runs\":[");
             boolean f2 = true;
             for (RunSummary rs : runs.values()) { if (!f2) out.append(','); f2 = false; out.append(rs.toJson()); }
+            // last failure of each tool, when it is newer than the tool's last success
+            out.append("],\"failures\":[");
+            File[] fails = new File(BaseStepPipeline.analysisDir(ps.config, l), "failures").listFiles((d, n) -> n.endsWith(".json"));
+            boolean f3 = true;
+            if (fails != null) for (File ff : fails) {
+                try {
+                    String fj = new String(Files.readAllBytes(ff.toPath()), "UTF-8");
+                    Map<String, Object> fm = MiniJson.asObject(MiniJson.parse(fj));
+                    RunSummary ok = runs.get(MiniJson.getStr(fm, "tool", ""));
+                    long ts = fm.get("timestamp") instanceof Number ? ((Number) fm.get("timestamp")).longValue() : 0;
+                    if (ok != null && ok.timestamp >= ts) continue;
+                    if (!f3) out.append(',');
+                    f3 = false;
+                    out.append(fj.trim());
+                } catch (Exception ignored) {}
+            }
             out.append("]}");
         }
         if (tsv) {
@@ -2482,8 +2539,27 @@ public class LocalServer {
      * Runs one tool on one locus and blocks until it finishes; the result is also recorded under
      * {@code jobId} for the job endpoints. Shared by the per-locus "Run" button and batch runs.
      */
+    /** Runs one per-locus tool and remembers its last failure (failures/<tool>.json in the locus folder) so the
+     *  project summary can tell "failed, and why" apart from "not run yet"; a later success clears it. */
     private PluginEngine.RunResult runAnalysisJob(String projectId, Config cfg, Locus targetLocus, String toolName,
                                                   Map<String, String> params, String jobId, ProgressTracker pt) {
+        PluginEngine.RunResult r = runAnalysisJobInner(projectId, cfg, targetLocus, toolName, params, jobId, pt);
+        try {
+            File f = new File(new File(BaseStepPipeline.analysisDir(cfg, targetLocus), "failures"), toolName.replaceAll("[^A-Za-z0-9_]", "") + ".json");
+            if (r != null && r.ok) {
+                Files.deleteIfExists(f.toPath());
+            } else {
+                f.getParentFile().mkdirs();
+                String err = r == null || r.error == null ? "unknown error" : r.error;
+                Files.write(f.toPath(), String.format(Locale.ROOT, "{\"tool\":\"%s\",\"timestamp\":%d,\"error\":\"%s\"}",
+                    escJ(toolName), System.currentTimeMillis(), escJ(err.length() > 400 ? err.substring(0, 400) + "..." : err)).getBytes("UTF-8"));
+            }
+        } catch (Exception ignored) {}
+        return r;
+    }
+
+    private PluginEngine.RunResult runAnalysisJobInner(String projectId, Config cfg, Locus targetLocus, String toolName,
+                                                       Map<String, String> params, String jobId, ProgressTracker pt) {
         String locusId = targetLocus.id;
         try {
             pt.update("Preparing", 0, 4);
@@ -5210,6 +5286,7 @@ public class LocalServer {
         STATIC_FILES.put("/index.html", "index.html");
         STATIC_FILES.put("/viewer.html", "viewer.html");
         STATIC_FILES.put("/serpent_plot.html", "serpent_plot.html");
+        STATIC_FILES.put("/summary.html", "summary.html");
         STATIC_FILES.put("/gene_constellation.html", "gene_constellation.html");
         STATIC_FILES.put("/lynx-server.js", "web/lynx-server.js");
         STATIC_FILES.put("/lynx-server.css", "web/lynx-server.css");
