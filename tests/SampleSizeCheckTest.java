@@ -54,6 +54,17 @@ public class SampleSizeCheckTest {
         r = MiniJson.asObject(MiniJson.parse(SampleSizeCheck.run(cfg, noLd)));
         failures += check("effective N set from the suggestion is accepted", "ok".equals(r.get("verdict")));
 
+        // 3b. a confirmed flag shows as confirmed, and the confirmation lapses when the sample size changes
+        int keepNe = cfg.nEffective;
+        cfg.nEffective = 0;                                                       // back to the 3x-too-small N
+        cfg.sampleSizeConfirmed = SampleSizeCheck.confirmKey(cfg);
+        r = MiniJson.asObject(MiniJson.parse(SampleSizeCheck.run(cfg, noLd)));
+        failures += check("owner confirmation turns the flag into 'confirmed'", "confirmed".equals(r.get("verdict")));
+        cfg.nCases += 1;
+        r = MiniJson.asObject(MiniJson.parse(SampleSizeCheck.run(cfg, noLd)));
+        failures += check("confirmation lapses when the sample size changes", "mismatch".equals(r.get("verdict")));
+        cfg.nCases -= 1; cfg.sampleSizeConfirmed = ""; cfg.nEffective = keepNe;
+
         // 4. the setting survives the properties file and is what the analyses use
         File props = new File(dir, "config.properties");
         cfg.sampleSizeChanged = 1234567890123L;

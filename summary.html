@@ -694,8 +694,8 @@ async function loadN() {
   try { d = r ? await r.json() : null; } catch (e) {}
   if (!r || !r.ok) { S.n = null; box.replaceChildren(h('p', { class: 'muted', text: (d && d.error) || 'The check could not run.' })); renderNext(); return; }
   S.n = d;
-  const pillCls = { ok: 'ok', mismatch: 'fail', review: 'fail', unknown: 'todo' }[d.verdict] || 'no';
-  const pillTxt = { ok: 'Consistent', mismatch: 'Mismatch', review: 'Needs review', unknown: 'Not set' }[d.verdict] || d.verdict;
+  const pillCls = { ok: 'ok', mismatch: 'fail', review: 'fail', unknown: 'todo', confirmed: 'ok' }[d.verdict] || 'no';
+  const pillTxt = { ok: 'Consistent', mismatch: 'Mismatch', review: 'Needs review', unknown: 'Not set', confirmed: 'Confirmed' }[d.verdict] || d.verdict;
   const tiles = [['Implied effective N', fmtN(Math.round(d.implied_neff / d.calibration)), 'from the standard errors'],
                  ['Used by the analyses', fmtN(Math.round(d.configured)), d.n_effective_set > 0 ? 'effective N set for this project' : 'from the configured sample size'],
                  ['Ratio', fmt(d.ratio, 2), 'implied / used (1 = consistent)']];
@@ -709,8 +709,19 @@ async function loadN() {
     owner && d.verdict === 'mismatch' && d.suggested && d.suggested.n_effective > 0
       ? h('button', { class: 'btn primary', style: 'margin-top:0.4rem', text: 'Use effective N ' + fmtN(d.suggested.n_effective), onclick: () => applyN() }) : null,
     owner && d.n_effective_set > 0
-      ? h('button', { class: 'btn', style: 'margin:0.4rem 0 0 0.4rem', text: 'Remove the effective N', onclick: () => applyN(0) }) : null);
+      ? h('button', { class: 'btn', style: 'margin:0.4rem 0 0 0.4rem', text: 'Remove the effective N', onclick: () => applyN(0) }) : null,
+    owner && (d.verdict === 'review' || d.verdict === 'mismatch')
+      ? h('button', { class: 'btn', style: 'margin:0.4rem 0 0 0.4rem', text: 'Mark as checked (the N is right)', onclick: () => confirmN() }) : null);
   renderNext();
+}
+async function confirmN() {
+  if (!confirm('Confirm that the configured sample size is right for this file (for example, checked against the paper or the GWAS Catalog)? '
+    + 'The check will show it as confirmed until the file or the sample size changes.')) return;
+  const r = await postJson(API + '/sample-size/apply', { confirm: 'true' });
+  if (!r.ok) { alert('Could not save: ' + (r.data.error || r.status)); return; }
+  S.cfg = (await getJson(API + '/config')) || S.cfg;
+  await loadN();
+  render();
 }
 async function applyN(value) {
   const msg = value === 0 ? 'Remove the effective sample size? The analyses will use the configured N again, and the results computed with the effective N become outdated.'

@@ -38,7 +38,14 @@ public final class SampleSizeCheck {
     public static String key(Config cfg) {
         File g = gwasFile(cfg);
         return g.length() + "|" + g.lastModified() + "|" + cfg.sampleN + "|" + cfg.nCases + "|" + cfg.nControls + "|" + cfg.colN
-            + "|" + cfg.colSe + "|" + cfg.colBeta + "|" + cfg.colOr + "|" + cfg.colMaf + "|" + cfg.nEffective + "|v4";
+            + "|" + cfg.colSe + "|" + cfg.colBeta + "|" + cfg.colOr + "|" + cfg.colMaf + "|" + cfg.nEffective + "|" + cfg.sampleSizeConfirmed + "|v5";
+    }
+
+    /** What a confirmation applies to: the GWAS file and the sample-size settings (not the confirmation itself). */
+    public static String confirmKey(Config cfg) {
+        File g = gwasFile(cfg);
+        return Long.toHexString((g.length() + "|" + g.lastModified() + "|" + cfg.sampleN + "|" + cfg.nCases + "|" + cfg.nControls
+            + "|" + cfg.nEffective + "|" + cfg.colN + "|" + cfg.colSe + "|" + cfg.colBeta + "|" + cfg.colOr).hashCode() & 0xffffffffL);
     }
 
     static File gwasFile(Config cfg) {
@@ -174,7 +181,8 @@ public final class SampleSizeCheck {
             verdict = "review";
             message = String.format(Locale.ROOT, "The standard errors fit neither a log-odds nor a 0/1 linear model with the configured "
                 + "%,d cases and %,d controls (closest: %s, %.2f times the expected size). Check the effect and SE columns, the "
-                + "effect type and the sample size against the paper; no automatic correction is offered.",
+                + "effect type and the sample size against the paper; no automatic correction is offered. If the sample size is right "
+                + "and only the effect scale is unusual (e.g. a transformed phenotype), results built on z-scores are unaffected: mark it as checked.",
                 cfg.nCases, cfg.nControls, scale, ratio);
             suggested = 0;
         } else if (Double.isNaN(ratio)) {
@@ -194,6 +202,11 @@ public final class SampleSizeCheck {
                 fmt(suggested), ratio >= 1 ? ratio : 1 / ratio, ratio >= 1 ? "larger than" : "smaller than", configuredWhat, fmt(configured));
         }
         if (!binary) message += " For a quantitative trait this assumes the trait was standardised; if it was not, the ratio only shows its scale.";
+        if (!"ok".equals(verdict) && confirmKey(cfg).equals(cfg.sampleSizeConfirmed)) {
+            verdict = "confirmed";
+            message = "Confirmed as correct by the project owner. The check found: " + message;
+            suggested = 0;
+        }
 
         String json = "{\"timestamp\":" + System.currentTimeMillis()
             + ",\"key\":\"" + key(cfg).replace("\\", "/").replace("\"", "'") + "\""

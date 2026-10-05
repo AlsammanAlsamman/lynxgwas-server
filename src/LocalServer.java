@@ -2279,6 +2279,14 @@ public class LocalServer {
         String body = new String(readAll(ex.getRequestBody()), "UTF-8");
         try {
             Config cfg = Config.loadFromProject(projectDir);
+            // {"confirm": "true"}: the owner confirms the configured sample size is right (tied to the current file and N)
+            if ("true".equals(extractStr(body, "confirm"))) {
+                cfg.sampleSizeConfirmed = SampleSizeCheck.confirmKey(cfg);
+                cfg.writeProperties(new File(projectDir, "config.properties").getAbsolutePath());
+                Files.deleteIfExists(SampleSizeCheck.resultFile(cfg).toPath());
+                respond(ex, 200, "application/json", "{\"ok\":true,\"confirmed\":true}".getBytes());
+                return;
+            }
             // body {"n_effective": N} sets that value, {"n_effective": 0} clears it; an empty body takes the check's suggestion
             String sent = extractStr(body, "n_effective");
             long ne;

@@ -88,7 +88,7 @@ public final class ConfigPolicy {
         to.sampleN = from.sampleN; to.nCases = from.nCases; to.nControls = from.nControls; to.traitType = from.traitType;
         to.effectType = from.effectType; to.genomeBuild = from.genomeBuild; to.ancestry = from.ancestry; to.diseaseName = from.diseaseName;
         to.prevalence = from.prevalence;
-        to.sampleSizeChanged = from.sampleSizeChanged; to.nEffective = from.nEffective;
+        to.sampleSizeChanged = from.sampleSizeChanged; to.nEffective = from.nEffective; to.sampleSizeConfirmed = from.sampleSizeConfirmed;
     }
 
     static boolean insideProject(String path, File projectDir) {
