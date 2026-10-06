@@ -3049,22 +3049,6 @@ public class LocalServer {
         }
     }
 
-
-
-
-    // ── GitHub project save/extract (Phase 6) ───────────────────────────────
-
-
-
-
-
-
-
-
-
-
-
-
     // POST /api/rsid-recover — { "project_id": "...", "snp_database_id": "..." }
     private void rsidRecover(HttpExchange ex) throws IOException {
         cors(ex); if (preflight(ex)) return;
