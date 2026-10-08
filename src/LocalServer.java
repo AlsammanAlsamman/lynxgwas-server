@@ -5575,7 +5575,9 @@ public class LocalServer {
         if (f == null || !f.isFile()) { SecurityGate.deny(ex, 404, "Not found"); return; }
         byte[] bytes = Files.readAllBytes(f.toPath());
         ex.getResponseHeaders().set("Content-Type", guessMime(p));
-        if (mapped == null) ex.getResponseHeaders().set("Cache-Control", "public, max-age=86400");
+        // pages are re-checked so an update shows at once; other static files keep a day of cache
+        if (p.endsWith(".html") || p.equals("/")) ex.getResponseHeaders().set("Cache-Control", "no-cache");
+        else if (mapped == null) ex.getResponseHeaders().set("Cache-Control", "public, max-age=86400");
         ex.sendResponseHeaders(200, bytes.length);
         try (OutputStream os = ex.getResponseBody()) { os.write(bytes); }
     }
