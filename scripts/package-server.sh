@@ -64,6 +64,7 @@ mkdir -p "$OUT/app/bin" "$OUT/app/docs" "$OUT/app/projects" "$OUT/app/output"
 find bin -maxdepth 1 -name '*.class' -exec cp {} "$OUT/app/bin/" \;
 for d in rsid loci export catalog opentargets; do [ -d "bin/$d" ] && cp -r "bin/$d" "$OUT/app/bin/"; done
 cp -r lib tools assets web "$OUT/app/"
+[ -d regulatory_links ] && cp -r regulatory_links "$OUT/app/"   # bundled scE2G enhancer-gene links
 mkdir -p "$OUT/app/scripts" && cp scripts/ukbb_ld.py "$OUT/app/scripts/"   # UK Biobank LD reader (SuSiE, mvSuSiE)
 cp -r docs/images "$OUT/app/docs/"
 cp index.html viewer.html serpent_plot.html gene_constellation.html summary.html "$OUT/app/"
