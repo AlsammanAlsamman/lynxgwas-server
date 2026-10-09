@@ -13,6 +13,7 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   src\analysis\MiniJson.java ^
   tests\MultiLocusScannerTest.java ^
   tests\LdCalculatorTest.java ^
+  tests\GffParserTest.java ^
   tests\GwasQcTest.java ^
   tests\GlobalConfigTest.java ^
   tests\AnovaUtilTest.java ^
@@ -54,6 +55,11 @@ if %ERRORLEVEL% neq 0 set FAILED=1
 echo.
 echo --- LdCalculatorTest ---
 java -cp "bin%LIBCP%" LdCalculatorTest
+if %ERRORLEVEL% neq 0 set FAILED=1
+
+echo.
+echo --- GffParserTest ---
+java -cp "bin%LIBCP%" GffParserTest
 if %ERRORLEVEL% neq 0 set FAILED=1
 
 echo.
