@@ -17,14 +17,14 @@ public class ServerMain {
         warnAboutRiskySettings(cfg);
 
         Clock clock = Clock.systemUTC();
-        Mailer mailer = Mailer.create(cfg);
-        ServerContext ctx = new ServerContext(cfg, clock, mailer);
+        ServerContext ctx = new ServerContext(cfg, clock);
+        warnAboutOldAccounts(cfg);
         ServerApi api = new ServerApi(ctx);
         LocalServer server = new LocalServer(ctx, api);
         server.start();
-        System.out.printf("Listening on %s:%d (public origin %s)%n", cfg.bindHost, cfg.port, cfg.publicOrigin);
-        System.out.printf("Accounts: %d, public datasets: %d, retention: %d days (warning %d days before)%n",
-            ctx.accounts.accountCount(), ctx.registry.publicIds().size(), cfg.retentionDays, cfg.retentionWarnDays);
+        System.out.printf("Listening on %s:%d (public address %s%s)%n", cfg.bindHost, cfg.port, String.join(", ", cfg.publicOrigins), cfg.basePath);
+        System.out.printf("Workspaces: %d, public datasets: %d, retention: %d days, idle workspaces removed after %d days%n",
+            ctx.workspaces.count(), ctx.registry.publicIds().size(), cfg.retentionDays, cfg.workspaceIdleDays);
 
         ScheduledExecutorService sched = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "retention"); t.setDaemon(true); return t;
@@ -38,18 +38,17 @@ public class ServerMain {
             System.out.println("[Server] shutting down");
             server.stop();
             sched.shutdownNow();
-            mailer.flush();
         }));
     }
 
-    /** Hourly: warn/delete expired projects, drop never-verified accounts and expired runs. */
+    /** Hourly: delete expired projects, idle workspaces and expired runs. */
     static void retentionSweep(ServerContext ctx, LocalServer server) {
         try {
-            int deleted = ctx.registry.sweep(ctx::emailUser);
-            int accounts = ctx.accounts.purgeUnverified(ctx.cfg.unverifiedAccountHours * 3_600_000L);
+            int deleted = ctx.registry.sweep();
+            int idle = ctx.workspaces.purgeIdle(ctx.cfg.workspaceIdleDays * 86_400_000L);
             int jobs = server.sweepExpiredJobs();
-            if (deleted + accounts + jobs > 0)
-                System.out.printf("[Retention] deleted %d project(s), %d unverified account(s), %d run(s)%n", deleted, accounts, jobs);
+            if (deleted + idle + jobs > 0)
+                System.out.printf("[Retention] deleted %d project(s), %d idle workspace(s), %d run(s)%n", deleted, idle, jobs);
         } catch (Throwable t) {
             System.err.println("[Retention] sweep failed: " + t);
         }
@@ -60,10 +59,19 @@ public class ServerMain {
         if (!loopback)
             System.out.println("[WARN] bind.host is not loopback: the Java server should sit behind a TLS proxy, not face the internet directly.");
         if (!cfg.secureCookies && !cfg.publicOrigin.startsWith("http://localhost") && !cfg.publicOrigin.startsWith("http://127.0.0.1"))
-            System.out.println("[WARN] secure.cookies=false with a non-local public.origin: sessions would travel without TLS.");
-        if (cfg.devMail())
-            System.out.println("[WARN] No smtp.host: verification codes are written to " + cfg.dataDir + "/outbox (development only).");
+            System.out.println("[WARN] secure.cookies=false with a non-local public.origin: workspace cookies would travel without TLS.");
+        if (cfg.maxStorageTotalMb == 0)
+            System.out.println("[WARN] max.storage.total.mb=0 (no limit): anonymous visitors could fill the disk.");
         if (cfg.refPanelPath.isEmpty())
             System.out.println("[WARN] No ref.panel.path: LD and fine-mapping will be unavailable for user projects.");
+    }
+
+    /** Data from the old email/password version: never read, but it is personal data an admin should remove. */
+    static void warnAboutOldAccounts(ServerConfig cfg) {
+        java.io.File old = new java.io.File(cfg.dataDir(), "accounts");
+        java.io.File outbox = new java.io.File(cfg.dataDir(), "outbox");
+        if (old.isDirectory() || outbox.isDirectory())
+            System.out.println("[WARN] " + cfg.dataDir + " still holds accounts/ or outbox/ from the email version "
+                + "(emails, password hashes). They are no longer used: delete them.");
     }
 }

@@ -3983,7 +3983,7 @@ async function exportLocusExcel() {
   var locIdx = lociOrder[currentStart];
   if (!locIdx) { alert('No locus selected'); return; }
 
-  if (window.LYNX && !LYNX.requireSignIn('Sign in to download Excel exports.')) return;
+  if (window.LYNX && !LYNX.requireSignIn('', exportLocusExcel)) return;
 
   try {
     var resp = await fetch(SERVER + '/api/export-excel', {

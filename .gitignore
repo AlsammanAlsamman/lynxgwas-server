@@ -77,3 +77,6 @@ projects/
 output/multi_locus/
 output/susiex/
 dist/
+
+# Docker: local secrets for docker compose
+.env

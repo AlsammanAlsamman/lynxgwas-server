@@ -6,20 +6,18 @@ import java.util.*;
 import java.util.zip.GZIPInputStream;
 
 /**
- * Endpoints that exist only on the server: accounts, the caller's own projects, uploads and
- * downloads. The ported desktop endpoints stay in LocalServer.
+ * Endpoints that exist only on the server: anonymous workspaces, the caller's own projects,
+ * uploads and downloads. The ported desktop endpoints stay in LocalServer. No email, password or
+ * other identifying data is collected (see WorkspaceService).
  *
- *   POST /api/auth/register  {email,password}
- *   POST /api/auth/verify    {email,code}            -> signs in
- *   POST /api/auth/resend    {email,purpose}         purpose = verify | reset
- *   POST /api/auth/login     {email,password}        -> signs in
- *   POST /api/auth/logout
- *   POST /api/auth/forgot    {email}
- *   POST /api/auth/reset     {email,code,password}   -> signs in
- *   GET  /api/auth/me
+ *   GET  /api/auth/me                                 workspace state + CSRF token
+ *   POST /api/auth/start                              create a workspace for this browser (if none)
+ *   POST /api/auth/open      {link}                   open a workspace from its link in this browser
+ *   POST /api/my/link                                 make a new workspace link (voids the old one)
+ *   POST /api/my/forget-browser                       this browser stops opening the workspace
+ *   POST /api/my/delete-workspace                     delete the workspace and all its projects
  *   POST /api/my/projects    {name,description}      create an empty project
  *   GET  /api/my/usage
- *   POST /api/my/delete-account {password}
  *   POST /api/upload/{projectId}/gwas                raw body = the GWAS file (.tsv/.csv/.txt, optionally .gz)
  *   GET  /api/project/{id}/gwas-header               (via LocalServer's router)
  *   GET  /api/project/{id}/download?file=exports/... (via LocalServer's router)
@@ -28,13 +26,18 @@ public class ServerApi {
 
     private final ServerContext ctx;
 
+    /** Bytes promised to uploads still streaming, so parallel uploads can't overshoot the quotas. */
+    private final Object quotaLock = new Object();
+    private long reservedTotal;
+    private final Map<String, Long> reservedByOwner = new HashMap<>();
+
     public ServerApi(ServerContext ctx) { this.ctx = ctx; }
 
     public void register(HttpServer http) {
         SecurityGate g = ctx.gate;
         g.allowPrefix("/api/auth/", SecurityGate.Policy.PUBLIC);
-        g.allowPrefix("/api/my/", SecurityGate.Policy.SIGNED_IN);
-        g.allowPrefix("/api/upload/", SecurityGate.Policy.SIGNED_IN);
+        g.allowPrefix("/api/my/", SecurityGate.Policy.WORKSPACE);
+        g.allowPrefix("/api/upload/", SecurityGate.Policy.WORKSPACE);
         g.uploadPrefix("/api/upload/");
         http.createContext("/api/auth/", this::auth).getFilters().add(g);
         http.createContext("/api/my/", this::my).getFilters().add(g);
@@ -48,68 +51,86 @@ public class ServerApi {
         String method = ex.getRequestMethod();
         if (action.equals("me") && method.equalsIgnoreCase("GET")) { me(ex); return; }
         if (!method.equalsIgnoreCase("POST")) { SecurityGate.deny(ex, 405, "POST required"); return; }
-
-        String ip = SecurityGate.clientIpOf(ex);
-        if (!ctx.authLimiter.allow(ip)) { SecurityGate.deny(ex, 429, "Too many attempts. Wait a few minutes and try again."); return; }
-        Map<String, Object> b = body(ex);
-        if (b == null) { SecurityGate.deny(ex, 400, "Invalid request"); return; }
-        String email = str(b, "email");
-        AccountService.Outcome out;
+        String net = limitKey(SecurityGate.clientIpOf(ex));
         switch (action) {
-            case "register":
-                if (!ctx.mailLimiter.allow(ip)) { SecurityGate.deny(ex, 429, "Too many emails requested. Wait a few minutes."); return; }
-                out = ctx.accounts.register(email, str(b, "password"));
-                break;
-            case "verify":
-                out = ctx.accounts.verifyEmail(email, str(b, "code"));
-                break;
-            case "resend":
-                if (!ctx.mailLimiter.allow(ip)) { SecurityGate.deny(ex, 429, "Too many emails requested. Wait a few minutes."); return; }
-                out = ctx.accounts.resendCode(email, "reset".equals(str(b, "purpose"))
-                    ? AccountService.Purpose.RESET_PASSWORD : AccountService.Purpose.VERIFY_EMAIL);
-                break;
-            case "login":
-                out = ctx.accounts.login(email, str(b, "password"));
-                break;
-            case "logout":
-                ctx.accounts.logout(SecurityGate.cookie(ex, ctx.gate.cookieName()));
-                ex.getResponseHeaders().add("Set-Cookie", ctx.gate.sessionCookie("", 0));
+            case "start": {
+                if (SecurityGate.session(ex) != null) { json(ex, 200, "{\"ok\":true}"); return; }
+                if (!ctx.newWorkspaceLimiter.allow(net)) {
+                    SecurityGate.deny(ex, 429, "Too many new workspaces from this network. Try again later."); return;
+                }
+                setWorkspaceCookie(ex, ctx.workspaces.create());
                 json(ex, 200, "{\"ok\":true}");
                 return;
-            case "forgot":
-                if (!ctx.mailLimiter.allow(ip)) { SecurityGate.deny(ex, 429, "Too many emails requested. Wait a few minutes."); return; }
-                out = ctx.accounts.requestPasswordReset(email);
-                break;
-            case "reset":
-                out = ctx.accounts.resetPassword(email, str(b, "code"), str(b, "password"));
-                break;
+            }
+            case "open": {
+                // Only failed attempts count, so people sharing one network can still open valid links
+                if (!ctx.linkLimiter.hasCapacity(net)) { SecurityGate.deny(ex, 429, "Too many wrong links. Wait a few minutes."); return; }
+                Map<String, Object> b = body(ex);
+                String token = b == null ? null : linkToken(str(b, "link"));
+                String device = token == null ? null : ctx.workspaces.openLink(token);
+                if (device == null) {
+                    ctx.linkLimiter.allow(net);
+                    SecurityGate.deny(ex, 400, "This workspace link is not valid. It may have been replaced by a newer link, or the workspace was deleted.");
+                    return;
+                }
+                ctx.workspaces.forgetDevice(SecurityGate.cookie(ex, ctx.gate.cookieName()));   // this browser leaves its old workspace
+                setWorkspaceCookie(ex, device);
+                json(ex, 200, "{\"ok\":true}");
+                return;
+            }
             default:
                 SecurityGate.deny(ex, 404, "Not found");
-                return;
         }
-        if (out.sessionToken != null) {
-            // Replace any session the browser already had (prevents session fixation)
-            ctx.accounts.logout(SecurityGate.cookie(ex, ctx.gate.cookieName()));
-            ex.getResponseHeaders().add("Set-Cookie",
-                ctx.gate.sessionCookie(out.sessionToken, AccountService.SESSION_ABSOLUTE_MS / 1000));
-        }
-        json(ex, out.ok ? 200 : 400, "{\"ok\":" + out.ok + ",\"message\":" + q(out.message) + "}");
     }
 
     private void me(HttpExchange ex) throws IOException {
-        AccountService.Session s = SecurityGate.session(ex);
-        AccountService.Account a = s == null ? null : ctx.accounts.account(s.userId);
+        WorkspaceService.Session s = SecurityGate.session(ex);
+        if (s != null)   // keep the cookie alive as long as the workspace is in use
+            setWorkspaceCookie(ex, SecurityGate.cookie(ex, ctx.gate.cookieName()));
         StringBuilder j = new StringBuilder("{");
-        j.append("\"signed_in\":").append(a != null);
-        if (a != null) {
-            j.append(",\"email\":").append(q(a.email));
-            j.append(",\"csrf\":").append(q(s.csrfToken));
-        }
+        j.append("\"signed_in\":").append(s != null);
+        if (s != null) j.append(",\"csrf\":").append(q(s.csrfToken));
+        j.append(",\"anonymous\":true");
         j.append(",\"retention_days\":").append(ctx.cfg.retentionDays);
+        j.append(",\"workspace_idle_days\":").append(ctx.cfg.workspaceIdleDays);
         j.append(",\"max_projects\":").append(ctx.cfg.maxProjectsPerUser);
         j.append(",\"max_upload_mb\":").append(ctx.cfg.maxUploadMb);
         j.append("}");
         json(ex, 200, j.toString());
+    }
+
+    private void setWorkspaceCookie(HttpExchange ex, String deviceToken) {
+        ex.getResponseHeaders().add("Set-Cookie", ctx.gate.sessionCookie(deviceToken, ctx.cfg.workspaceIdleDays * 86_400L));
+    }
+
+    private void clearWorkspaceCookie(HttpExchange ex) {
+        ex.getResponseHeaders().add("Set-Cookie", ctx.gate.sessionCookie("", 0));
+    }
+
+    /** Rate-limit key for a client address: the IPv4 address, or the /64 network for IPv6 (one host owns a /64). */
+    static String limitKey(String ip) {
+        if (ip == null || ip.indexOf(':') < 0) return ip;
+        try {
+            byte[] a = java.net.InetAddress.getByName(ip).getAddress();   // a literal address: no DNS lookup
+            if (a.length != 16) return ip;
+            StringBuilder sb = new StringBuilder("v6:");
+            for (int i = 0; i < 8; i++) sb.append(String.format("%02x", a[i]));
+            return sb.toString();
+        } catch (java.net.UnknownHostException e) {
+            return ip;
+        }
+    }
+
+    /** The token from a pasted workspace link (full URL with #workspace=..., or the bare token). */
+    static String linkToken(String pasted) {
+        if (pasted == null) return null;
+        String t = pasted.trim();
+        int at = t.indexOf("workspace=");
+        if (at >= 0) t = t.substring(at + "workspace=".length());
+        int end = 0;
+        while (end < t.length() && (Character.isLetterOrDigit(t.charAt(end)) || t.charAt(end) == '-' || t.charAt(end) == '_')) end++;
+        t = t.substring(0, end);
+        return t.length() >= 32 && t.length() <= 100 ? t : null;
     }
 
     // ── /api/my/* ───────────────────────────────────────────────────────
@@ -129,31 +150,37 @@ public class ServerApi {
         if (b == null) { SecurityGate.deny(ex, 400, "Invalid request"); return; }
 
         if (action.equals("projects")) {
-            if (ctx.registry.ownedBy(userId).size() >= ctx.cfg.maxProjectsPerUser) {
-                SecurityGate.deny(ex, 403, "You already have " + ctx.cfg.maxProjectsPerUser
-                    + " projects. Delete one (or wait for one to expire) to create another."); return;
-            }
             String name = str(b, "name").trim(), desc = str(b, "description").trim();
             if (name.isEmpty() || name.length() > 80 || desc.length() > 500 || hasControl(name) || hasControl(desc)) {
                 SecurityGate.deny(ex, 400, "Give the project a name (up to 80 characters) and an optional description (up to 500)."); return;
             }
-            ProjectRegistry.Entry e = ctx.registry.create(userId, name);
+            ProjectRegistry.Entry e;
+            synchronized (ctx.registry) {   // count and create together, so parallel requests can't exceed the limit
+                if (ctx.registry.ownedBy(userId).size() >= ctx.cfg.maxProjectsPerUser) {
+                    SecurityGate.deny(ex, 403, "You already have " + ctx.cfg.maxProjectsPerUser
+                        + " projects. Delete one (or wait for one to expire) to create another."); return;
+                }
+                e = ctx.registry.create(userId, name);
+            }
             File dir = new File(ctx.cfg.projectsDir(), e.projectId);
             writeMeta(dir, name, desc);
             json(ex, 200, "{\"ok\":true,\"id\":" + q(e.projectId) + ",\"expires_at\":" + e.expiresAt + "}");
             return;
         }
-        if (action.equals("delete-account")) {
-            AccountService.Account a = ctx.accounts.account(userId);
-            String password = str(b, "password");
-            if (a == null || !Crypto.verifyPassword(password.toCharArray(), a.passwordHash)) {
-                SecurityGate.deny(ex, 403, "Password is incorrect."); return;
-            }
-            String email = a.email;
-            ctx.accounts.deleteAccount(userId);          // also deletes every project of the account
-            ex.getResponseHeaders().add("Set-Cookie", ctx.gate.sessionCookie("", 0));
-            ctx.mailer.send(email, "LYNXgwas: account deleted",
-                "Your LYNXgwas account and all of its projects have been deleted, as you requested.\n");
+        if (action.equals("link")) {
+            String token = ctx.workspaces.newLink(userId);
+            json(ex, 200, "{\"ok\":true,\"link\":" + q(ctx.cfg.publicOrigin + ctx.cfg.basePath + "/#workspace=" + token) + "}");
+            return;
+        }
+        if (action.equals("forget-browser")) {
+            ctx.workspaces.forgetDevice(SecurityGate.cookie(ex, ctx.gate.cookieName()));
+            clearWorkspaceCookie(ex);
+            json(ex, 200, "{\"ok\":true}");
+            return;
+        }
+        if (action.equals("delete-workspace")) {
+            ctx.workspaces.delete(userId);               // also deletes every project of the workspace
+            clearWorkspaceCookie(ex);
             json(ex, 200, "{\"ok\":true}");
             return;
         }
@@ -180,24 +207,50 @@ public class ServerApi {
         if (!ctx.gate.requireProject(ex, projectId, true)) return;
         String userId = SecurityGate.userId(ex);
 
-        long used = ctx.registry.storageUsedBy(userId);
-        long quota = ctx.cfg.maxStoragePerUserMb << 20;
-        long room = quota - used;
-        if (room <= 0) { SecurityGate.deny(ex, 413, "Your storage quota is full. Delete a project first."); return; }
-
         File projectDir = new File(ctx.cfg.projectsDir(), projectId);
+        if (!projectDir.isDirectory()) { SecurityGate.deny(ex, 404, "Project not found"); return; }
+
+        // Reserve the space before streaming, so parallel uploads can't overshoot either quota
+        long allowance;
+        synchronized (quotaLock) {
+            long room = (ctx.cfg.maxStoragePerUserMb << 20) - ctx.registry.storageUsedBy(userId) - reservedByOwner.getOrDefault(userId, 0L);
+            if (room <= 0) { SecurityGate.deny(ex, 413, "Your storage quota is full (or another upload is still running). Delete a project first."); return; }
+            if (ctx.cfg.maxStorageTotalMb > 0) {
+                long serverRoom = (ctx.cfg.maxStorageTotalMb << 20) - ctx.registry.storageUsedByAll() - reservedTotal;
+                if (serverRoom <= 0) { SecurityGate.deny(ex, 507, "The server is full right now. Please try again in a few days."); return; }
+                room = Math.min(room, serverRoom);
+            }
+            allowance = Math.min(room, ctx.cfg.maxUploadMb * 8L << 20);
+            reservedTotal += allowance;
+            reservedByOwner.merge(userId, allowance, Long::sum);
+        }
+
         File inputDir = new File(projectDir, "input");
-        Files.createDirectories(inputDir.toPath());
         File tmp = new File(inputDir, "upload-" + Crypto.randomId(8) + ".part");
         File dest = new File(inputDir, "gwas.tsv");
         long written;
-        try (InputStream raw = new BufferedInputStream(ex.getRequestBody(), 1 << 16)) {
-            written = normalizeToTsv(raw, tmp, Math.min(room, ctx.cfg.maxUploadMb * 8L << 20));
-        } catch (IOException e) {
-            tmp.delete();
-            SecurityGate.deny(ex, 400, "Upload rejected: " + e.getMessage()); return;
+        try {
+            if (!inputDir.isDirectory() && !inputDir.mkdir() && !inputDir.isDirectory()) {   // never re-creates a deleted project
+                SecurityGate.deny(ex, 404, "Project not found"); return;
+            }
+            try (InputStream raw = new BufferedInputStream(ex.getRequestBody(), 1 << 16)) {
+                written = normalizeToTsv(raw, tmp, allowance);
+            } catch (IOException e) {
+                SecurityGate.deny(ex, 400, "Upload rejected: " + e.getMessage()); return;
+            }
+            Files.move(tmp.toPath(), dest.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } finally {
+            Files.deleteIfExists(tmp.toPath());
+            synchronized (quotaLock) {
+                reservedTotal -= allowance;
+                reservedByOwner.computeIfPresent(userId, (k, v) -> v - allowance <= 0 ? null : v - allowance);
+            }
         }
-        Files.move(tmp.toPath(), dest.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        // The project may have been deleted while the file streamed in: leave nothing behind
+        if (ctx.registry.entry(projectId) == null) {
+            FileSafety.deleteTree(projectDir);
+            SecurityGate.deny(ex, 404, "Project not found"); return;
+        }
 
         // Point the project at its upload (the only way gwas.file is ever set on the server)
         File cfgFile = new File(projectDir, "config.properties");

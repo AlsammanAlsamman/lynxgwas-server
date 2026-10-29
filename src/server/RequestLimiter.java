@@ -2,7 +2,7 @@ import java.time.Clock;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-/** Token-bucket limits per key (client IP, email, user id). Old buckets are pruned lazily. */
+/** Token-bucket limits per key (client IP or network, workspace id). Old buckets are pruned lazily. */
 public class RequestLimiter {
     private static class Bucket { double tokens; long updated; }
 
@@ -16,6 +16,15 @@ public class RequestLimiter {
         this.capacity = capacity;
         this.refillPerMs = perMinute / 60_000.0;
         this.clock = clock;
+    }
+
+    /** True when {@code key} could make a request now, without using up a token. */
+    public boolean hasCapacity(String key) {
+        Bucket b = buckets.get(key);
+        if (b == null) return true;
+        synchronized (b) {
+            return Math.min(capacity, b.tokens + (clock.millis() - b.updated) * refillPerMs) >= 1;
+        }
     }
 
     public boolean allow(String key) {

@@ -206,6 +206,127 @@ table.gsearch-table a.gsearch-open:hover { background: #0b5a46; }
 .wiz-col-required { border-left: 3px solid #0F6E56; padding-left: 0.75rem; }
 .wiz-col-optional { border-left: 3px solid #d1d5db; padding-left: 0.75rem; }
 
+
+/* ══ Home page usability pass: hierarchy, next steps, menus, mobile ══════════ */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+header { padding: 1.25rem 2rem; }
+header .logo { width: 68px; height: 68px; }
+header h1 { font-size: 1.6rem; }
+
+.toolbar h2 { flex: 0 0 auto; margin-right: 0.25rem; }
+.toolbar-actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-left: auto; }
+.btn:focus-visible, .lx-scope button:focus-visible, .menu-list button:focus-visible { outline: 2px solid #0F6E56; outline-offset: 2px; }
+.btn-sm { padding: 0.3rem 0.7rem; font-size: 0.8rem; }
+.btn-lg { padding: 0.65rem 1.4rem; font-size: 0.95rem; }
+.btn-ghost { background: transparent; color: #334155; border: 1px solid #d1d5db; }
+.btn-ghost:hover { background: #f1f5f9; }
+.caret { font-size: 0.7rem; opacity: 0.7; }
+
+/* Dropdown menus (toolbar and the ⋯ menu on each project) */
+.menu { position: relative; display: inline-block; }
+.menu-list {
+  display: none; position: absolute; right: 0; top: calc(100% + 4px); z-index: 50; min-width: 250px;
+  background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; box-shadow: 0 10px 30px rgba(15,23,42,0.15);
+  padding: 0.35rem;
+}
+.menu.open .menu-list { display: block; }
+.menu-list button {
+  display: flex; flex-direction: column; align-items: flex-start; width: 100%; text-align: left;
+  font: inherit; font-size: 0.85rem; color: #1a1a2e; background: none; border: none; border-radius: 6px;
+  padding: 0.45rem 0.65rem; cursor: pointer; white-space: normal;
+}
+.menu-list button span { font-size: 0.75rem; color: #64748b; font-weight: 400; }
+.menu-list button:hover, .menu-list button:focus { background: #f0faf6; }
+.menu-list button.danger { color: #b91c1c; }
+.menu-list button.danger:hover { background: #fef2f2; }
+.menu-list hr { border: none; border-top: 1px solid #eef0f2; margin: 0.3rem 0.2rem; }
+.menu-list.up { top: auto; bottom: calc(100% + 4px); }
+
+/* Project table */
+.projects-wrap { min-height: 0; overflow: visible; }
+#project-table { font-size: 0.82rem; }
+#project-table thead th:first-child { border-top-left-radius: 10px; }
+#project-table thead th:last-child { border-top-right-radius: 10px; }
+#project-table td { padding: 0.6rem 0.6rem; vertical-align: middle; max-width: none; }
+#project-table th.num, #project-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+#project-table tbody tr { cursor: default; }
+#project-table tbody tr.openable { cursor: pointer; }
+.proj-name { display: flex; align-items: center; gap: 0.15rem; font-weight: 700; color: #1a1a2e; max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
+.proj-name b { overflow: hidden; text-overflow: ellipsis; }
+.proj-desc { font-size: 0.75rem; color: #6b7280; margin: 0.1rem 0 0 1.45rem; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.muted { color: #9ca3af; }
+.annot { font-size: 0.75rem; color: #475569; }
+td.actions { min-width: 0; white-space: nowrap; text-align: right; }
+td.actions .btn { margin: 0 0 0 0.35rem; padding: 0.35rem 0.8rem; font-size: 0.8rem; }
+.btn-more { padding: 0.35rem 0.55rem !important; font-size: 1rem !important; line-height: 1; letter-spacing: 1px; }
+
+/* Stage stepper: Upload → Loci → Process → Explore */
+.stage { display: flex; flex-direction: column; gap: 0.25rem; min-width: 190px; }
+.stage-steps { display: flex; align-items: center; gap: 0; }
+.stage-steps .dot {
+  width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 0.65rem; font-weight: 700; background: #e5e7eb; color: #6b7280; flex: 0 0 auto;
+}
+.stage-steps .dot.done { background: #0F6E56; color: #fff; }
+.stage-steps .dot.now { background: #fff; color: #0F6E56; box-shadow: inset 0 0 0 2px #0F6E56; }
+.stage-steps .dot.bad { background: #fee2e2; color: #991b1b; box-shadow: inset 0 0 0 2px #fca5a5; }
+.stage-steps .dot.busy { background: #dbeafe; color: #1e40af; box-shadow: inset 0 0 0 2px #93c5fd; animation: lx-pulse 1.4s ease-in-out infinite; }
+.stage-steps .bar { width: 16px; height: 2px; background: #e5e7eb; }
+.stage-steps .bar.done { background: #0F6E56; }
+.stage-text { font-size: 0.75rem; color: #475569; white-space: normal; }
+.stage-text b { color: #1a1a2e; }
+.stage-text.bad { color: #991b1b; }
+.stage-text .progress-text { margin-left: 0; }
+@keyframes lx-pulse { 50% { opacity: 0.55; } }
+@media (prefers-reduced-motion: reduce) { .stage-steps .dot.busy { animation: none; } }
+.chip { display: inline-block; font-size: 0.68rem; font-weight: 600; padding: 0.05rem 0.45rem; border-radius: 999px; margin-left: 0.25rem; }
+.chip-warn { background: #fef3c7; color: #92400e; }
+
+/* Onboarding (no projects yet) */
+.empty { padding: 2.5rem 1.5rem; }
+.empty-title { font-size: 1.05rem; font-weight: 700; color: #1a1a2e; }
+.empty-lead { max-width: 560px; margin: 0.4rem auto 1.25rem !important; color: #475569; }
+.onboard-steps { list-style: none; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.75rem; max-width: 820px; margin: 0 auto 1.5rem; text-align: left; }
+.onboard-steps li { background: #f8fafc; border: 1px solid #eef0f2; border-radius: 10px; padding: 0.75rem 0.85rem; display: flex; flex-direction: column; gap: 0.15rem; }
+.onboard-steps .n { width: 22px; height: 22px; border-radius: 50%; background: #0F6E56; color: #fff; font-size: 0.75rem; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 0.2rem; }
+.onboard-steps b { color: #1a1a2e; font-size: 0.88rem; }
+.onboard-steps span:last-child { font-size: 0.78rem; color: #64748b; }
+
+/* Cross-dataset runs */
+.runs-wrap { margin-top: 1.5rem; min-height: 0; padding-top: 0.75rem; }
+.runs-title { font-size: 0.95rem; margin: 0 0.75rem 0.5rem; }
+.runs-hint { margin-top: 1.25rem; display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; background: #fff; border-radius: 10px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06); padding: 0.75rem 1rem; font-size: 0.85rem; color: #475569; }
+.runs-hint b { color: #1a1a2e; }
+.runs-hint span { flex: 1; min-width: 200px; }
+
+/* Narrower screens: drop secondary columns */
+@media (max-width: 1100px) { #project-table .hide-narrow { display: none; } }
+
+/* Phones: header shrinks, project rows become cards */
+@media (max-width: 760px) {
+  header { padding: 0.75rem 1rem; gap: 0.75rem; }
+  header .logo { width: 44px; height: 44px; border-width: 2px; }
+  header h1 { font-size: 1.25rem; }
+  header .subtitle { font-size: 0.75rem; }
+  header .meta { display: none; }
+  main { padding: 1rem 0.75rem; }
+  .toolbar { gap: 0.5rem; }
+  .toolbar h2 { width: 100%; }
+  .toolbar-actions { margin-left: 0; width: 100%; }
+  .toolbar-actions #btn-new { margin-left: auto; }
+  .onboard-steps { grid-template-columns: 1fr 1fr; }
+  #project-table thead { display: none; }
+  #project-table, #project-table tbody, #project-table tr, #project-table td { display: block; width: 100%; }
+  #project-table tr { border: 1px solid #eef0f2; border-radius: 10px; margin: 0.6rem; width: auto; padding: 0.6rem 0.4rem; }
+  #project-table td { padding: 0.25rem 0.5rem; border: none; }
+  #project-table td.num { text-align: left; display: inline-block; width: auto; }
+  #project-table td.num::before { content: attr(data-label) ': '; color: #6b7280; }
+  #project-table td.actions { text-align: left; white-space: normal; }
+  #project-table td.actions .btn:first-child { margin-left: 0; }
+  .proj-name, .proj-desc { max-width: none; }
+  .menu-list { right: auto; left: 0; }
+}
 </style>
 </head>
 <body>
@@ -229,58 +350,61 @@ table.gsearch-table a.gsearch-open:hover { background: #0b5a46; }
       <button type="button" id="scope-mine" aria-pressed="false" onclick="setScope('mine')">My projects</button>
     </div>
     <button id="btn-process-all" style="display:none" disabled></button>
-    <button class="btn btn-secondary" onclick="openToolsManager()">
-      Tools
-    </button>
-    <button class="btn btn-secondary" onclick="openMissingRsids()">
-      Missing rsIDs
-    </button>
-    <button class="btn btn-secondary" onclick="openLocusMatrix()">
-      Gene Constellation
-    </button>
-    <button class="btn btn-secondary" onclick="openLocusMatrix('serpent')" title="Linear cross-dataset view: one serpent per locus through every dataset, plus a category analysis of what drives shared loci">
-      Locus Serpent Plot
-    </button>
-    <button class="btn btn-secondary" onclick="openSusiex()">
-      SuSiEx
-    </button>
-    <button class="btn btn-secondary" onclick="openGlobalSearch()">
-      Search
-    </button>
-    <button class="btn btn-primary" id="btn-new" onclick="newProject()">
-      + New project
-    </button>
+    <div class="toolbar-actions">
+      <button class="btn btn-secondary" onclick="openGlobalSearch()" title="Find a gene or SNP across every dataset you can see">Search</button>
+      <div class="menu">
+        <button class="btn btn-secondary" type="button" aria-haspopup="true" aria-expanded="false" onclick="toggleMenu(this)">Compare datasets <span class="caret" aria-hidden="true">▾</span></button>
+        <div class="menu-list" role="menu">
+          <button role="menuitem" onclick="closeMenus();openLocusMatrix()"><b>Gene Constellation</b><span>Shared genes and loci across datasets</span></button>
+          <button role="menuitem" onclick="closeMenus();openLocusMatrix('serpent')"><b>Locus Serpent Plot</b><span>One serpent per locus through every dataset</span></button>
+          <button role="menuitem" onclick="closeMenus();openSusiex()"><b>SuSiEx</b><span>Cross-ancestry fine-mapping of one region</span></button>
+        </div>
+      </div>
+      <div class="menu">
+        <button class="btn btn-secondary" type="button" aria-haspopup="true" aria-expanded="false" onclick="toggleMenu(this)">More <span class="caret" aria-hidden="true">▾</span></button>
+        <div class="menu-list" role="menu">
+          <button role="menuitem" onclick="closeMenus();openMissingRsids()"><b>Missing rsIDs</b><span>SNPs without an rsID in your projects</span></button>
+          <button role="menuitem" onclick="closeMenus();openToolsManager()"><b>Analysis tools</b><span>What each fine-mapping tool does and needs</span></button>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="btn-new" onclick="newProject()">+ New project</button>
+    </div>
   </div>
 
   <p class="lx-scope-hint" id="scope-hint"></p>
-  <div class="table-wrap">
+  <div class="table-wrap projects-wrap">
     <table id="project-table">
       <thead>
         <tr>
-          <th>Name</th>
-          <th>Description</th>
-          <th>Loci</th>
-          <th>SNPs</th>
-          <th>SNP sources</th>
-          <th>Locus sources</th>
-          <th>Last processed</th>
-          <th>Status</th>
-          <th>rsIDs</th>
-          <th>Loci source</th>
-          <th id="th-retention" style="display:none">Storage</th>
-          <th>Actions</th>
+          <th>Project</th>
+          <th id="th-progress">Status</th>
+          <th class="num">Loci</th>
+          <th class="num">SNPs</th>
+          <th class="hide-narrow" title="Annotation sources attached to SNPs and to loci">Annotations</th>
+          <th class="hide-narrow">Last processed</th>
+          <th id="th-retention" style="display:none">Kept for</th>
+          <th class="th-actions"><span class="sr-only">Actions</span></th>
         </tr>
       </thead>
       <tbody id="project-tbody"></tbody>
     </table>
     <div class="empty" id="empty-state" style="display:none">
-      <p id="empty-title">No projects yet.</p>
-      <p id="empty-body">Click <b>+ New project</b> to upload your GWAS summary statistics.</p>
+      <p class="empty-title" id="empty-title">No projects yet.</p>
+      <div id="empty-body">
+        <p class="empty-lead">Analyse your own GWAS summary statistics in four steps. No account needed: your projects stay private to this browser.</p>
+        <ol class="onboard-steps">
+          <li><span class="n">1</span><b>Upload</b><span>your summary statistics (.tsv, .csv or .txt, optionally gzipped)</span></li>
+          <li><span class="n">2</span><b>Find loci</b><span>genome-wide significant regions are grouped into loci</span></li>
+          <li><span class="n">3</span><b>Process</b><span>genes, LD and annotations for every locus</span></li>
+          <li><span class="n">4</span><b>Explore</b><span>open the viewer, fine-map and download the results</span></li>
+        </ol>
+        <button class="btn btn-primary btn-lg" onclick="newProject()">+ New project</button>
+      </div>
     </div>
   </div>
 
-  <div class="table-wrap" style="margin-top:1.5rem">
-    <h3 style="font-size:0.95rem;margin:0 0 0.5rem"><span class="runs-scope-label">Public</span> Gene Constellation runs</h3>
+  <div class="table-wrap runs-wrap" id="runs-constellation" style="display:none">
+    <h3 class="runs-title"><span class="runs-scope-label">Public</span> Gene Constellation runs</h3>
     <table>
       <thead>
         <tr>
@@ -296,12 +420,12 @@ table.gsearch-table a.gsearch-open:hover { background: #0b5a46; }
       <tbody id="locus-matrix-tbody"></tbody>
     </table>
     <div class="empty" id="locus-matrix-empty" style="display:none">
-      <p>No Gene Constellation runs yet. Click <b>Gene Constellation</b> above to compare datasets.</p>
+      <p>No Gene Constellation runs yet. Use <b>Compare datasets</b> above to start one.</p>
     </div>
   </div>
 
-  <div class="table-wrap" style="margin-top:1.5rem">
-    <h3 style="font-size:0.95rem;margin:0 0 0.5rem"><span class="runs-scope-label">Public</span> Locus Serpent Plot runs</h3>
+  <div class="table-wrap runs-wrap" id="runs-serpent" style="display:none">
+    <h3 class="runs-title"><span class="runs-scope-label">Public</span> Locus Serpent Plot runs</h3>
     <table>
       <thead>
         <tr>
@@ -317,20 +441,29 @@ table.gsearch-table a.gsearch-open:hover { background: #0b5a46; }
       <tbody id="serpent-tbody"></tbody>
     </table>
     <div class="empty" id="serpent-empty" style="display:none">
-      <p>No Locus Serpent Plot runs yet. Click <b>Locus Serpent Plot</b> above, pick the datasets to compare, and run it.</p>
+      <p>No Locus Serpent Plot runs yet. Use <b>Compare datasets</b> above to start one.</p>
     </div>
+  </div>
+
+  <div class="runs-hint" id="runs-empty-hint" style="display:none">
+    <b>Compare datasets</b>
+    <span id="runs-empty-text">No cross-dataset runs yet.</span>
+    <button class="btn btn-secondary btn-sm" onclick="openLocusMatrix()">Gene Constellation</button>
+    <button class="btn btn-secondary btn-sm" onclick="openLocusMatrix('serpent')">Locus Serpent Plot</button>
   </div>
 
   <details class="manual-panel">
     <summary>How your data is stored</summary>
     <ul style="margin:0.6rem 0 0 1.2rem;font-size:0.85rem;line-height:1.6">
-      <li>Your projects are private: only you can see them, after signing in.</li>
-      <li>Each project is <b>deleted automatically <span class="retention-days">15</span> days after you create it</b>. The bar on each project shows the time left, turning from green to red, and you get an email a few days before deletion and when it happens.</li>
-      <li>Download what you want to keep (the <b>Excel</b> button) before the countdown ends. Deleted data cannot be recovered.</li>
-      <li>Public datasets are read-only and available to everyone without an account.</li>
+      <li>No account, email or password is needed. Your projects belong to a private workspace in this browser; nobody else can see them.</li>
+      <li>To use the same workspace on another computer, open <b>Workspace</b> at the top and make a link. Keep the link private: anyone who has it can open your projects.</li>
+      <li>The server keeps nothing that identifies you: no name, email, password or IP address is stored with your workspace.</li>
+      <li>Never open a workspace link someone else sent you: whoever made it would see everything you upload.</li>
+      <li>Each project is <b>deleted automatically <span class="retention-days">15</span> days after you create it</b>. The bar on each project shows the time left, turning from green to red.</li>
+      <li>Download what you want to keep (<b>⋯ &gt; Download Excel</b> on each project) before the countdown ends. Deleted data cannot be recovered.</li>
+      <li>Public datasets are read-only and open to everyone.</li>
     </ul>
   </details>
-</main>
 
   <!-- ── Server resources (read-only) ───────────────────────── -->
   <details class="manual-panel" style="margin-top:0.75rem">
@@ -343,6 +476,7 @@ table.gsearch-table a.gsearch-open:hover { background: #0b5a46; }
       <p style="color:#666;font-size:0.82rem;margin-top:0.8rem">These are installed and maintained by the site administrator.</p>
     </div>
   </details>
+</main>
 
 <!-- ── Get Loci modal ──────────────────────────────────────── -->
 <div class="wizard-overlay" id="loci-overlay">
@@ -392,7 +526,7 @@ let pollTimers = {};
 let scope = (function() { try { return localStorage.getItem('lynx.scope') === 'mine' ? 'mine' : 'public'; } catch (e) { return 'public'; } })();
 
 function setScope(next) {
-  if (next === 'mine' && !LYNX.requireSignIn('Sign in to see your own projects.')) return;
+  if (next === 'mine' && !LYNX.requireSignIn('', function() { setScope('mine'); })) return;
   scope = next;
   try { localStorage.setItem('lynx.scope', scope); } catch (e) {}
   loadProjects();
@@ -408,7 +542,7 @@ async function loadProjects() {
   var days = me.retention_days || 15;
   document.querySelectorAll('.retention-days').forEach(function(e) { e.textContent = days; });
   document.getElementById('scope-hint').textContent = scope === 'mine'
-    ? 'Your private projects. Each one is deleted automatically ' + days + ' days after it was created; the bar shows the time left.'
+    ? 'Your private projects, in this browser\'s workspace. Each one is deleted automatically ' + days + ' days after it was created; the bar shows the time left.'
     : 'Curated public datasets, read-only and open to everyone. Switch to My projects to analyse your own data.';
   try {
     const resp = await fetch(API + '/api/projects?scope=' + scope);
@@ -451,11 +585,13 @@ function render() {
   const tbody = document.getElementById('project-tbody');
   const empty = document.getElementById('empty-state');
   const btnAll = document.getElementById('btn-process-all');
+  document.getElementById('th-progress').textContent = scope === 'mine' ? 'Progress' : 'Status';
+  document.getElementById('project-table').style.display = projects.length ? '' : 'none';
 
   if (projects.length === 0) {
     tbody.innerHTML = '';
     empty.style.display = '';
-    document.getElementById('empty-title').textContent = scope === 'mine' ? 'You have no projects yet.' : 'No public datasets are available.';
+    document.getElementById('empty-title').textContent = scope === 'mine' ? 'Start your first project' : 'No public datasets are available yet.';
     document.getElementById('empty-body').style.display = scope === 'mine' ? '' : 'none';
     btnAll.disabled = true;
     return;
@@ -468,36 +604,25 @@ function render() {
   tbody.innerHTML = projects.map(p => {
     const name = p.name || p.id;
     const desc = p.description || '';
-    const loci = p.loci_count != null ? p.loci_count : '—';
-    const snps = p.total_snps != null ? p.total_snps.toLocaleString() : '—';
-    const snpSrc = p.snp_annotation_sources != null ? p.snp_annotation_sources : '—';
-    const locSrc = p.locus_annotation_sources != null ? p.locus_annotation_sources : '—';
-    const last = p.last_processed ? formatDate(p.last_processed) : '—';
-    const badge = statusBadge(p);
     const own = p.access === 'owner';
+    const st = projectStage(p);
+    const id = esc(p.id);
+    const num = function(v) { return v != null && v !== 0 ? Number(v).toLocaleString() : '<span class="muted">—</span>'; };
+    const annot = (p.snp_annotation_sources || p.locus_annotation_sources)
+      ? '<span class="annot">' + (p.snp_annotation_sources || 0) + ' SNP · ' + (p.locus_annotation_sources || 0) + ' locus</span>'
+      : '<span class="muted">—</span>';
 
-    return '<tr onclick="openProject(\'' + esc(p.id) + '\')" data-id="' + esc(p.id) + '">'
-      + '<td title="' + escAttr(name) + '">' + miniGenomeIcon(p.id) + '<b>' + esc(name) + '</b></td>'
-      + '<td class="desc" title="' + escAttr(desc) + '">' + esc(desc) + '</td>'
-      + '<td title="' + escAttr(String(loci)) + '">' + loci + '</td>'
-      + '<td title="' + escAttr(String(snps)) + '">' + snps + '</td>'
-      + '<td title="' + escAttr(String(snpSrc)) + '">' + snpSrc + '</td>'
-      + '<td title="' + escAttr(String(locSrc)) + '">' + locSrc + '</td>'
-      + '<td title="' + escAttr(last) + '">' + last + '</td>'
-      + '<td>' + badge + '</td>'
-      + '<td>' + (own ? rsidBadge(p) : (p.rsid_column_present ? '<span class="badge badge-ok">present</span>' : '—')) + '</td>'
-      + '<td>' + (own ? lociBadge(p) : '—') + '</td>'
+    return '<tr class="' + (st.openable ? 'openable' : '') + '"' + (st.openable ? ' onclick="openProject(\'' + id + '\')"' : '')
+      + ' data-id="' + id + '">'
+      + '<td><div class="proj-name" title="' + escAttr(name) + '">' + miniGenomeIcon(p.id) + '<b>' + esc(name) + '</b></div>'
+      + (desc ? '<div class="proj-desc" title="' + escAttr(desc) + '">' + esc(desc) + '</div>' : '') + '</td>'
+      + '<td>' + (own ? stageCell(p, st) : statusBadge(p)) + '</td>'
+      + '<td class="num" data-label="Loci">' + num(p.loci_count) + '</td>'
+      + '<td class="num" data-label="SNPs">' + num(p.total_snps) + '</td>'
+      + '<td class="hide-narrow">' + annot + '</td>'
+      + '<td class="hide-narrow">' + (p.last_processed && isProcessed(p) ? esc(formatDate(p.last_processed)) : '<span class="muted">Not yet</span>') + '</td>'
       + (own ? '<td class="retention-cell" data-created="' + Number(p.created_at) + '" data-expires="' + Number(p.expires_at) + '"></td>' : '')
-      + '<td class="actions" onclick="event.stopPropagation()">'
-      + '<button class="btn btn-secondary" style="background:#dbeafe;color:#1e3a8a;font-weight:600" onclick="openSummary(\'' + esc(p.id) + '\')" title="Results of every analysis, with plots, and what still needs to be run">Summary</button>'
-      + (own ? '<button class="btn btn-secondary" onclick="editConfig(\'' + esc(p.id) + '\')" title="Upload data / edit settings">Edit</button>'
-             + '<button class="btn btn-secondary" onclick="reprocess(\'' + esc(p.id) + '\')" title="Process">Process</button>' : '')
-      + '<button class="btn btn-secondary" onclick="exportExcel(\'' + esc(p.id) + '\')" title="Download as Excel">Excel</button>'
-      + (own ? '<button class="btn btn-secondary" style="background:#d1fae5;color:#065f46" onclick="openProjectAnalysis(\'' + esc(p.id) + '\')" title="Build analysis base artifacts">Analyze</button>' : '')
-      + '<button class="btn btn-secondary" onclick="openGwasQc(\'' + esc(p.id) + '\')" title="Genomic inflation / confounding triage">QC</button>'
-      + (own ? '<button class="btn btn-secondary" onclick="openEvidence(\'' + esc(p.id) + '\')" title="Attach gene-level evidence data (PPI, expression, etc.)">Evidence</button>'
-             + '<button class="btn btn-danger" style="padding:0.2rem 0.6rem;font-size:0.75rem" onclick="deleteProject(\'' + esc(p.id) + '\')" title="Delete project now">Delete</button>' : '')
-      + '</td></tr>';
+      + '<td class="actions" onclick="event.stopPropagation()">' + actionButtons(p, st, own) + '</td></tr>';
   }).join('');
 
   document.querySelectorAll('.retention-cell').forEach(function(td) {
@@ -506,17 +631,127 @@ function render() {
   projects.filter(p => p.status === 'processing').forEach(p => startPolling(p.id));
 }
 
+/** True once processing has produced results (the server stamps a date at upload, so that alone is not enough). */
+function isProcessed(p) { return p.status === 'up_to_date' || (p.total_snps || 0) > 0; }
+
+/**
+ * Where an own project is in the workflow and what to do next:
+ * step 0 = upload, 1 = find loci, 2 = process, 3 = explore.
+ */
+function projectStage(p) {
+  if (p.access !== 'owner') return { step: 3, openable: true };
+  if (p.status === 'processing') return { step: 2, busy: true, text: 'Processing…', openable: false };
+  if (!p.has_upload) return { step: 0, text: 'Next: upload your GWAS file', action: 'upload' };
+  if (!p.has_loci) return { step: 1, text: 'Next: find the loci', action: 'loci' };
+  if (p.status === 'up_to_date') return { step: 3, done: true, text: 'Ready to explore', action: 'open', openable: true };
+  if (p.status === 'needs_reprocessing' && isProcessed(p))
+    return { step: 2, text: 'Settings changed: process again', action: 'process', openable: true };
+  if (p.status === 'error' && isProcessed(p))
+    return { step: 2, bad: true, text: 'Processing failed. Check the settings, then process again.', action: 'process' };
+  return { step: 2, text: 'Next: process the loci', action: 'process' };
+}
+
+function stageCell(p, st) {
+  var labels = ['Upload', 'Find loci', 'Process', 'Explore'];
+  var html = '<div class="stage"><div class="stage-steps" aria-hidden="true">';
+  for (var k = 0; k < 4; k++) {
+    var cls = k < st.step || st.done ? 'done' : k === st.step ? (st.busy ? 'busy' : st.bad ? 'bad' : 'now') : '';
+    if (k > 0) html += '<span class="bar ' + (k <= st.step ? 'done' : '') + '"></span>';
+    html += '<span class="dot ' + cls + '" title="' + labels[k] + '">' + (cls === 'done' ? '&#10003;' : k + 1) + '</span>';
+  }
+  html += '</div><div class="stage-text' + (st.bad ? ' bad' : '') + '">'
+    + (st.busy ? '<b>Processing…</b> <span class="progress-text" id="ppct-' + esc(p.id) + '"></span>' : esc(st.text))
+    + (p.has_loci && !p.rsid_column_present ? '<span class="chip chip-warn" title="rsIDs help with annotations; add them from the ⋯ menu">no rsIDs</span>' : '')
+    + '</div><span class="sr-only">Step ' + (st.step + 1) + ' of 4</span></div>';
+  return html;
+}
+
+/** One clear next-step button, Summary when there are results, and everything else in a ⋯ menu. */
+function actionButtons(p, st, own) {
+  var id = esc(p.id);
+  var primary = {
+    upload: ['Upload data', 'editConfig'],
+    loci: ['Find loci', 'lociOpen'],
+    process: [st.bad || st.text.indexOf('again') >= 0 ? 'Process again' : 'Process', 'reprocess'],
+    open: ['Open results', 'openProject']
+  }[st.action];
+  var html = '';
+  if (!own) html += '<button class="btn btn-primary" onclick="openProject(\'' + id + '\')">Open</button>';
+  else if (primary) html += '<button class="btn btn-primary" onclick="' + primary[1] + '(\'' + id + '\')">' + primary[0] + '</button>';
+  else if (st.busy) html += '<button class="btn btn-secondary" disabled>Processing…</button>';
+  var hasResults = !own || isProcessed(p);
+  if (hasResults) html += '<button class="btn btn-secondary" onclick="openSummary(\'' + id + '\')" title="Results of every analysis, with plots, and what still needs to be run">Summary</button>';
+
+  var items = [];
+  var item = function(label, fn, hint, cls) {
+    items.push('<button role="menuitem"' + (cls ? ' class="' + cls + '"' : '') + ' onclick="closeMenus();' + fn + '(\'' + id + '\')">'
+      + '<b>' + label + '</b>' + (hint ? '<span>' + hint + '</span>' : '') + '</button>');
+  };
+  if (own) {
+    if (st.action !== 'upload') item('Edit settings', 'editConfig', 'Replace the file, columns, sample size');
+    if (p.has_upload && st.action !== 'loci') item('Find loci again', 'lociOpen', 'Change the thresholds and regroup loci');
+    if (p.has_loci && !p.rsid_column_present) item('Add rsIDs', 'rsidOpen', 'Look up rsIDs for the SNPs');
+    if (p.has_loci && st.action !== 'process' && !st.busy) item('Process again', 'reprocess', 'Rebuild genes, LD and annotations');
+    if (isProcessed(p)) item('Fine-mapping and analyses', 'openProjectAnalysis', 'SuSiE, FINEMAP, MAGMA, COJO, heritability');
+    if (p.has_upload) item('Quality control', 'openGwasQc', 'Genomic inflation (lambda GC)');
+    if (isProcessed(p)) item('Gene evidence', 'openEvidence', 'Attach PPI, expression or other gene data');
+    if (isProcessed(p)) item('Download Excel', 'exportExcel', 'All results in one workbook');
+    if (items.length) items.push('<hr>');
+    item('Delete project', 'deleteProject', 'Removes it and its data now', 'danger');
+  } else {
+    item('Quality control', 'openGwasQc', 'Genomic inflation (lambda GC)');
+    item('Download Excel', 'exportExcel', 'All results in one workbook');
+  }
+  html += '<div class="menu"><button class="btn btn-ghost btn-more" type="button" aria-haspopup="true" aria-expanded="false"'
+    + ' aria-label="More actions for ' + escAttr(p.name || p.id) + '" title="More actions" onclick="toggleMenu(this)">⋯</button>'
+    + '<div class="menu-list" role="menu">' + items.join('') + '</div></div>';
+  return html;
+}
+
+// ── Dropdown menus (toolbar and project rows) ──
+function closeMenus(except) {
+  document.querySelectorAll('.menu.open').forEach(function(m) {
+    if (m === except) return;
+    m.classList.remove('open');
+    var b = m.querySelector('[aria-expanded]');
+    if (b) b.setAttribute('aria-expanded', 'false');
+  });
+}
+function toggleMenu(btn) {
+  var menu = btn.closest('.menu');
+  var open = !menu.classList.contains('open');
+  closeMenus(menu);
+  menu.classList.toggle('open', open);
+  btn.setAttribute('aria-expanded', String(open));
+  if (!open) return;
+  var list = menu.querySelector('.menu-list');
+  list.classList.remove('up');
+  if (list.getBoundingClientRect().bottom > window.innerHeight - 8 && btn.getBoundingClientRect().top > list.offsetHeight + 8) list.classList.add('up');
+  var first = list.querySelector('button');
+  if (first) first.focus();
+}
+document.addEventListener('click', function(e) { if (!e.target.closest('.menu')) closeMenus(); });
+document.addEventListener('keydown', function(e) {
+  var menu = document.querySelector('.menu.open');
+  if (!menu) return;
+  var items = Array.prototype.slice.call(menu.querySelectorAll('.menu-list button'));
+  var at = items.indexOf(document.activeElement);
+  if (e.key === 'Escape') { var b = menu.querySelector('[aria-expanded]'); closeMenus(); if (b) b.focus(); }
+  else if (e.key === 'ArrowDown') { e.preventDefault(); items[(at + 1) % items.length].focus(); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); items[(at - 1 + items.length) % items.length].focus(); }
+});
+
 function statusBadge(p) {
   switch (p.status) {
     case 'up_to_date':
-      return '<span class="badge badge-ok">Up to date</span>';
+      return '<span class="badge badge-ok">Ready</span>';
     case 'needs_reprocessing':
-      return '<span class="badge badge-stale">Needs reprocessing</span>';
+      return '<span class="badge badge-stale">Being updated</span>';
     case 'processing':
       return '<span class="badge badge-proc">Processing…</span>'
         + '<span class="progress-text" id="ppct-' + esc(p.id) + '"></span>';
     case 'error':
-      return '<span class="badge badge-error">Error</span>';
+      return '<span class="badge badge-error">Unavailable</span>';
     default:
       return '<span class="badge">' + esc(p.status || 'unknown') + '</span>';
   }
@@ -570,7 +805,7 @@ var OPT_ALIASES = {
 };
 
 function newProject() {
-  if (!LYNX.requireSignIn('Sign in (or create a free account) to upload your own GWAS data.')) return;
+  if (!LYNX.requireSignIn('', newProject)) return;
   if (scope !== 'mine') setScope('mine');
   wizOpen('create', null);
 }
@@ -684,7 +919,7 @@ function wizRenderBasics(c) {
     + '<div class="wiz-field"><label>Description (optional)</label>'
     + '<input data-wiz-key="_desc" maxlength="500" value="' + escAttr(desc) + '" placeholder="Brief description">'
     + '</div>'
-    + '<div class="hint">The project is private to your account and is deleted automatically '
+    + '<div class="hint">The project is private to your workspace and is deleted automatically '
     + ((LYNX.me() || {}).retention_days || 15) + ' days after creation.</div>';
 }
 
@@ -952,7 +1187,7 @@ function escAttr(s) { return (s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot
 function openSummary(id) { location.href = 'summary.html?project=' + encodeURIComponent(id); }
 
 async function exportExcel(id) {
-  if (!LYNX.requireSignIn('Sign in to download Excel exports.')) return;
+  if (!LYNX.requireSignIn('', function() { exportExcel(id); })) return;
   try {
     var resp = await fetch(API + '/api/export-excel', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -2011,7 +2246,7 @@ function renderSusiexForm() {
     + 'Pick two or more projects (different ancestries/cohorts) and, for each, the locus that '
     + 'corresponds to the shared region. Each project must already have loci identified, a sample '
     + 'size (N) configured. Runs <a href="https://github.com/getian107/SuSiEx" '
-    + 'target="_blank" rel="noopener">SuSiEx</a> on the server; results are private to your account.</p>'
+    + 'target="_blank" rel="noopener">SuSiEx</a> on the server; results are private to your workspace.</p>'
     + '<div style="font-size:0.85rem;font-weight:600;margin-bottom:0.4rem">Projects</div>'
     + '<div id="sx-project-list" style="max-height:180px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:8px;padding:0.5rem;margin-bottom:0.75rem">Loading…</div>'
     + '<div id="sx-locus-pickers" style="margin-bottom:1rem"></div>'
@@ -2315,11 +2550,24 @@ async function loadLocusMatrixJobs() {
   try {
     var jobs = await (await fetch(API + '/api/locus-matrix-jobs')).json();
     jobs = jobs.filter(function(j) { return scope === 'mine' ? j.mine : !j.mine; });
-    renderRunsTable('locus-matrix-tbody', 'locus-matrix-empty', jobs.filter(function(j) { return j.kind !== 'serpent'; }), 'constellation');
-    renderRunsTable('serpent-tbody', 'serpent-empty', jobs.filter(function(j) { return j.kind === 'serpent'; }), 'serpent');
+    var constellation = jobs.filter(function(j) { return j.kind !== 'serpent'; });
+    var serpent = jobs.filter(function(j) { return j.kind === 'serpent'; });
+    renderRunsTable('locus-matrix-tbody', 'locus-matrix-empty', constellation, 'constellation');
+    renderRunsTable('serpent-tbody', 'serpent-empty', serpent, 'serpent');
+    showRunSections(constellation.length, serpent.length);
   } catch (e) {
     ['locus-matrix-tbody', 'serpent-tbody'].forEach(function(id) { var t = document.getElementById(id); if (t) t.innerHTML = ''; });
+    showRunSections(0, 0);
   }
+}
+
+function showRunSections(nConstellation, nSerpent) {
+  document.getElementById('runs-constellation').style.display = nConstellation ? '' : 'none';
+  document.getElementById('runs-serpent').style.display = nSerpent ? '' : 'none';
+  document.getElementById('runs-empty-hint').style.display = nConstellation || nSerpent ? 'none' : '';
+  document.getElementById('runs-empty-text').textContent = scope === 'mine'
+    ? 'You have no cross-dataset runs yet. Compare two or more datasets to find shared loci and genes.'
+    : 'No public cross-dataset runs yet.';
 }
 
 // One runs table (Gene Constellation or Locus Serpent Plot). Both views read the same completed job,

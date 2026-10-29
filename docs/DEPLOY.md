@@ -2,6 +2,7 @@
 
 The server ships as a **self-contained package**: the app plus its own Java runtime.
 Nothing needs to be installed on the server and no admin rights are needed to run it.
+To keep the app isolated from the rest of the server instead, run it in Docker (section 8).
 
 ## 1. Build the package (on a developer machine that has a JDK 17)
 
@@ -82,14 +83,12 @@ heritability, and causal-SNP rankings appear read-only to everyone. Joint fine-m
 a public cross-dataset run are public when they have no owner: copy their `meta.json`,
 `result.json` and `manifest.json` into `app/output/mvsusie/<id>/`.
 
-## 4. Email
+## 4. No accounts, no email
 
-Verification codes, retention warnings and deletion notices are sent by SMTP over TLS:
-- Set `smtp.host`, `smtp.port`, `smtp.security` and `smtp.user` in server.properties.
-- Put the password in the environment variable named by `smtp.password.env`, never in the file.
-
-Any SMTP account works, for example an institutional relay, Amazon SES, Mailgun, Postmark or
-SendGrid. Leaving `smtp.host` empty writes emails to `data.dir/outbox`. Use that for testing only.
+Visitors don't sign up. The first time someone creates a project, their browser gets an anonymous
+private workspace (see `docs/SECURITY.md`). No email server is needed and nothing that identifies a
+person is stored. Set the abuse limits in server.properties: `max.storage.total.mb` (keep it below the free
+space of the data disk) and `max.new.workspaces.per.ip.per.hour`.
 
 ## 5. HTTPS in front (required)
 
@@ -109,7 +108,6 @@ In server.properties set:
 ## 6. Run
 
 ```sh
-export LYNX_SMTP_PASSWORD='...'
 export LYNX_CODE_PEPPER="$(head -c 48 /dev/urandom | base64)"   # optional; else a key file is generated
 ./lynxgwas-server
 ```
@@ -124,8 +122,50 @@ To keep it running:
 
 - The startup log shows no `[WARN]` lines.
 - `https://your.domain/` loads, and `http://` redirects to https (Caddy does this).
-- Registering sends a real email, and the code works.
-- Your projects show a green countdown bar.
+- "New project" creates a private workspace; your projects show a green countdown bar.
+- A workspace link (Workspace > Make a link) opens the same projects in a private browser window.
 - `curl -I https://your.domain/` shows the `Content-Security-Policy` and
   `Strict-Transport-Security` headers.
 - Port 8765 is **not** reachable from outside: `curl http://SERVER_IP:8765` from another machine must fail.
+
+## 8. Running in Docker (isolated)
+
+The container holds the app, Java, PLINK 1.9, GCTA 1.94.1, MAGMA 1.10 and R 4.3.3 with susieR,
+coloc and bigsnpr. Reference data stays outside the image.
+
+**How it is isolated** (`docker-compose.yml`): runs as an unprivileged user (uid 10001), read-only
+system, no Linux capabilities, `no-new-privileges`, limits on CPU, memory and processes, a `noexec`
+`/tmp`, and the port published on `127.0.0.1` only. The container sees only two host locations:
+the `lynxgwas-data` volume (read-write: projects, accounts, results) and the reference folder
+(read-only). It still has outbound internet access, which the rsID/GWAS Catalog/Open Targets
+lookups need.
+
+```sh
+cp .env.example .env                 # reference folder, pepper, CPU/memory limits
+nano docker/server.docker.properties # public.origin, storage limits, reference file names
+docker compose up -d --build                  # behind your own reverse proxy (127.0.0.1:8765)
+docker compose --profile https up -d --build  # or with the bundled Caddy (HTTPS on 80/443)
+docker compose logs -f lynxgwas
+```
+
+Reference folder layout (mounted at `/reference`; names must match the properties file):
+
+| Path | Used for |
+|---|---|
+| `gencode.v37lift37.annotation.gff3` | gene annotation |
+| `panel/g1000_eur.{bed,bim,fam}` | LD reference panel |
+| `panel/g1000_eur_chr1..22.{bed,bim,fam}` | optional: ~4x faster loci identification |
+| `ldsc/eur_w_ld_chr/` | SNP-heritability |
+| `cadd/gnomad.genomes.r2.1.1.snv.tsv.gz` + `.tbi` | optional: CADD in the causal-SNP ranking |
+
+Per-chromosome panel files: `for c in $(seq 1 22); do plink --bfile g1000_eur --chr $c --make-bed --out g1000_eur_chr$c; done`.
+
+Notes:
+- Size the limits from the load test (`benchmark/LYNXgwas_Server_Load_Test_Report.pdf`):
+  16 CPUs and 32 GB RAM on the host; give the container `LYNXGWAS_MEMORY=24g` or more, because
+  each loci-identification PLINK call reserves 6 GB.
+- Back up the `lynxgwas-data` volume (`docker run --rm -v lynxgwas-server_lynxgwas-data:/d -v $PWD:/b
+  alpine tar czf /b/lynxgwas-data.tgz -C /d .`).
+- Not included in the image: SuSiEx, mvSuSiE and the UK Biobank LD reader (needs Python).
+- Update: `git pull && docker compose up -d --build`. The data volume is kept.
+

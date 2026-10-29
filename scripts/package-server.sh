@@ -26,8 +26,8 @@ esac
 HOST_WINDOWS=false
 case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) HOST_WINDOWS=true ;; esac
 
-# Modules the server needs (jdeps) + service providers jdeps cannot see: jdk.crypto.ec (TLS to the
-# SMTP server), java.naming/java.xml/jdk.charsets (used by Jakarta Mail at runtime).
+# Modules the server needs (jdeps) + service providers jdeps cannot see: jdk.crypto.ec (TLS for the
+# rsID / GWAS Catalog / Open Targets lookups), java.naming/java.xml/jdk.charsets.
 MODULES="java.base,java.desktop,java.logging,java.management,java.naming,java.net.http,java.scripting,java.xml,jdk.charsets,jdk.crypto.ec,jdk.httpserver,jdk.management"
 
 echo "=== Compiling ==="

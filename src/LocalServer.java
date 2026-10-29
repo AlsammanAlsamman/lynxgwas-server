@@ -230,7 +230,7 @@ public class LocalServer {
         http = HttpServer.create(new InetSocketAddress(ctx.cfg.bindHost, ctx.cfg.port), 64);
         loadPersistedLocusMatrixJobs();
 
-        final SecurityGate.Policy PUB = SecurityGate.Policy.PUBLIC, USER = SecurityGate.Policy.SIGNED_IN;
+        final SecurityGate.Policy PUB = SecurityGate.Policy.PUBLIC, USER = SecurityGate.Policy.WORKSPACE;
 
         // Projects (per-project access is checked inside each handler)
         route("/api/projects/process", this::processProjects, USER, true);
@@ -322,7 +322,7 @@ public class LocalServer {
         String userId = SecurityGate.userId(ex);
         List<File> dirs = new ArrayList<>();
         if ("mine".equals(scope)) {
-            if (userId == null) { SecurityGate.deny(ex, 401, "Please sign in."); return; }
+            if (userId == null) { SecurityGate.deny(ex, 401, "Open My projects first: it creates your private workspace."); return; }
             for (ProjectRegistry.Entry e : ctx.registry.ownedBy(userId)) dirs.add(new File("projects", e.projectId));
         } else {
             for (String id : ctx.registry.publicIds()) dirs.add(new File("projects", id));
@@ -435,7 +435,6 @@ public class LocalServer {
             }
 
             Main.PipelineResult result = Main.runPipeline(cfg, projectDir, pt);
-            pt.done = true;
 
             // Write project.json
             Set<String> uniqueSnps = new HashSet<>();
@@ -458,6 +457,9 @@ public class LocalServer {
 
             setProjectState(id, result.config, result.gff, result.loci, result.outputs);
             System.out.printf("[Server] Project '%s' processed: %d loci%n", id, meta.lociCount);
+            // Only now: the page treats "done" as "ready", and a next step started earlier was
+            // refused because this job still held the user's job slot
+            pt.done = true;
         } catch (Exception e) {
             pt.phase = "Error: " + e.getMessage();
             pt.done = true;
@@ -1960,7 +1962,7 @@ public class LocalServer {
 
     /**
      * Deletes users' cross-dataset runs once they are older than the retention period, or once
-     * their owner's account is gone. Public runs are kept. Called by the retention scheduler.
+     * their owner's workspace is gone. Public runs are kept. Called by the retention scheduler.
      */
     public int sweepExpiredJobs() {
         long cutoff = System.currentTimeMillis() - ctx.cfg.retentionDays * 86_400_000L;
@@ -1970,16 +1972,16 @@ public class LocalServer {
             if (meta == null || meta.ownerId == null) continue;
             long created;
             try { created = java.time.Instant.parse(meta.createdAt).toEpochMilli(); } catch (Exception e) { created = 0; }
-            if (created < cutoff || ctx.accounts.account(meta.ownerId) == null) {
+            if (created < cutoff || ctx.workspaces.workspace(meta.ownerId) == null) {
                 deleteLocusMatrixJob(jobId);
                 removed++;
             }
         }
-        susiexJobs.entrySet().removeIf(e -> e.getValue().createdAt < cutoff || ctx.accounts.account(e.getValue().ownerId) == null);
-        mvsusieJobs.entrySet().removeIf(e -> e.getValue().startedAt < cutoff || ctx.accounts.account(e.getValue().ownerId) == null);
+        susiexJobs.entrySet().removeIf(e -> e.getValue().createdAt < cutoff || ctx.workspaces.workspace(e.getValue().ownerId) == null);
+        mvsusieJobs.entrySet().removeIf(e -> e.getValue().startedAt < cutoff || ctx.workspaces.workspace(e.getValue().ownerId) == null);
         ensureMvsusieIndex();
         for (MvsusieSaved sv : new ArrayList<>(mvsusieSaved.values())) {
-            boolean expired = sv.ownerId != null && (sv.created < cutoff || ctx.accounts.account(sv.ownerId) == null);
+            boolean expired = sv.ownerId != null && (sv.created < cutoff || ctx.workspaces.workspace(sv.ownerId) == null);
             if (expired || !locusMatrixJobMeta.containsKey(sv.job)) {
                 mvsusieSaved.remove(sv.id);
                 try { FileSafety.deleteTree(new File(MVSUSIE_DIR, sv.id)); }
@@ -4777,7 +4779,7 @@ public class LocalServer {
     private final Map<String, MvsusieSaved> mvsusieSaved = new ConcurrentHashMap<>();
     private volatile boolean mvsusieIndexed = false;
 
-    // Access hooks: the signed-in account; cross-dataset runs it may see; datasets it may read
+    // Access hooks: the caller's workspace; cross-dataset runs it may see; datasets it may read
     private String mvsusieUser(HttpExchange ex) { return SecurityGate.userId(ex); }
     private boolean mvsusieCanSeeRun(HttpExchange ex, String job) { return canSeeJob(ex, job); }
     private boolean mvsusieReadable(HttpExchange ex, String pid) { return ctx.gate.canRead(ex, pid); }

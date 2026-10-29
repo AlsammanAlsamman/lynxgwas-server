@@ -6,39 +6,33 @@ import java.time.Clock;
 public class ServerContext {
     public final ServerConfig cfg;
     public final Clock clock;
-    public final Mailer mailer;
-    public final AccountService accounts;
+    public final WorkspaceService workspaces;
     public final ProjectRegistry registry;
     public final SecurityGate gate;
     public final JobLimiter jobs;
-    public final RequestLimiter authLimiter;   // login/register/verify/reset attempts per IP
-    public final RequestLimiter mailLimiter;   // code emails per IP
+    public final RequestLimiter newWorkspaceLimiter;   // workspaces created per IP
+    public final RequestLimiter linkLimiter;           // workspace-link attempts per IP (guessing)
 
-    public ServerContext(ServerConfig cfg, Clock clock, Mailer mailer) throws IOException {
+    public ServerContext(ServerConfig cfg, Clock clock) throws IOException {
         this.cfg = cfg;
         this.clock = clock;
-        this.mailer = mailer;
         Files.createDirectories(cfg.dataDir().toPath());
         FileSafety.restrictToOwner(cfg.dataDir());
         Files.createDirectories(cfg.projectsDir().toPath());
-        this.accounts = new AccountService(cfg.dataDir(), loadPepper(cfg), mailer, clock, "LYNXgwas");
+        this.workspaces = new WorkspaceService(cfg.dataDir(), loadPepper(cfg), clock);
         this.registry = new ProjectRegistry(cfg, clock);
-        this.accounts.setAccountRemovedListener(a -> registry.deleteAllOf(a.id));
-        this.gate = new SecurityGate(cfg, accounts, registry, clock);
+        this.workspaces.setRemovedListener(w -> registry.deleteAllOf(w.id));
+        this.gate = new SecurityGate(cfg, workspaces, registry, clock);
         this.jobs = new JobLimiter(cfg.maxJobsPerUser, cfg.maxJobsTotal);
-        this.authLimiter = new RequestLimiter(20, 10, clock);
-        this.mailLimiter = new RequestLimiter(5, 2, clock);
-    }
-
-    /** Emails an account owner (by user id); silently skipped if the account no longer exists. */
-    public void emailUser(String userId, String subjectSuffix, String body) {
-        AccountService.Account a = accounts.account(userId);
-        if (a != null) mailer.send(a.email, "LYNXgwas: " + subjectSuffix, body);
+        this.newWorkspaceLimiter = new RequestLimiter(cfg.maxNewWorkspacesPerIpPerHour,
+            cfg.maxNewWorkspacesPerIpPerHour / 60.0, clock);
+        this.linkLimiter = new RequestLimiter(10, 5, clock);
     }
 
     /**
      * Server secret for keyed digests: the environment variable named by pepper.env, else a random
-     * key generated once into <dataDir>/pepper.key (owner-only). Changing it voids pending codes/sessions.
+     * key generated once into <dataDir>/pepper.key (owner-only). Changing it disconnects every
+     * workspace from its browsers and links (their projects are then removed as idle).
      */
     static byte[] loadPepper(ServerConfig cfg) throws IOException {
         String env = cfg.secretFromEnv(cfg.pepperEnv);

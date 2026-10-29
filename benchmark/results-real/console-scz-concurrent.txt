@@ -1,0 +1,74 @@
+
+== PGC3 Schizophrenia EUR: 270 MB, -Xmx6g ==
+    upload                           7.51s  cpu     8.2s  avg  1.09 / peak  1.60 cores  rss peak    326 MB
+    loci-identify (PLINK clump)    133.66s  cpu   166.1s  avg  1.24 / peak  3.32 cores  rss peak   6293 MB
+      -> 178 loci
+    qc (lambda GC)                  16.73s  cpu    23.5s  avg  1.42 / peak  2.62 cores  rss peak   5919 MB
+    process (incl. LD)             822.39s  cpu   823.7s  avg  1.00 / peak  2.72 cores  rss peak   6937 MB
+    build base (LD matrices)      1889.26s  cpu  3569.3s  avg  1.89 / peak  3.25 cores  rss peak   6167 MB
+    analysis: finemap               50.36s  cpu   166.7s  avg  3.32 / peak  4.34 cores  rss peak   3752 MB
+      -> 177/177 loci, ok 177, failed 0, skipped 1, 0.3 s/locus
+    analysis: susie_finemapping    642.90s  cpu  3981.2s  avg  6.19 / peak  7.62 cores  rss peak   4471 MB
+      -> 38/177 loci, ok 38, failed 0, skipped 1, 16.9 s/locus, projected full run 2995 s
+    analysis: magma_gene           586.50s  cpu  1090.1s  avg  1.86 / peak  2.96 cores  rss peak   3843 MB
+      -> 177/177 loci, ok 156, failed 21, skipped 1, 3.3 s/locus
+         errors: ['Locus 4: No genes overlapping 1:30402503-30469412 in the loaded gene annotation. Nothing to annotate.', 'Locus 20: No genes overlapping 2:60379362-60408416 in the loaded gene annotation. Nothing to annotate.']
+    analysis: cojo_conditional      74.31s  cpu   216.3s  avg  2.91 / peak  4.23 cores  rss peak   3850 MB
+      -> 177/177 loci, ok 177, failed 0, skipped 1, 0.4 s/locus
+    analysis: snp_rank               6.08s  cpu    21.5s  avg  3.46 / peak  4.59 cores  rss peak   3720 MB
+      -> 177/177 loci, ok 38, failed 139, skipped 1, 0.0 s/locus
+         errors: ['Locus 39: Run SuSiE on this locus first (the ranking uses its PIPs)', 'Locus 40: Run SuSiE on this locus first (the ranking uses its PIPs)']
+    analysis: heritability_local   606.04s  cpu  2081.8s  avg  3.43 / peak  7.65 cores  rss peak   4680 MB
+      -> 131/177 loci, ok 131, failed 0, skipped 1, 4.6 s/locus, projected full run 819 s
+    heritability (LDSC, genome)     19.75s  cpu    31.1s  avg  1.59 / peak  3.26 cores  rss peak   3957 MB
+    WHOLE RUN 4857.5 s, peak rss 6937 MB, project disk 3223 MB
+
+Saved <scratch>/real-run2/real-20261006-182522-xmx6g.json
+scz EXIT 0
+
+== 2 users at once (adhd, scz), -Xmx6g ==
+    upload                          11.46s  cpu    22.6s  avg  1.96 / peak  3.01 cores  rss peak    335 MB
+    upload                          16.71s  cpu    33.9s  avg  2.01 / peak  3.01 cores  rss peak    958 MB
+    loci-identify (PLINK clump)    109.43s  cpu   255.3s  avg  2.33 / peak  4.65 cores  rss peak   7496 MB
+      -> 12 loci
+    qc (lambda GC)                  23.81s  cpu    55.9s  avg  2.35 / peak  3.95 cores  rss peak   6940 MB
+    loci-identify (PLINK clump)    159.54s  cpu   367.2s  avg  2.30 / peak  4.65 cores  rss peak   7496 MB
+      -> 178 loci
+    qc (lambda GC)                  15.20s  cpu    41.3s  avg  2.71 / peak  4.35 cores  rss peak   2791 MB
+    process (incl. LD)             105.34s  cpu   241.9s  avg  2.30 / peak  4.89 cores  rss peak   5088 MB
+    build base (LD matrices)       149.04s  cpu   446.2s  avg  2.99 / peak  4.06 cores  rss peak   3685 MB
+    analysis: finemap                4.03s  cpu    15.9s  avg  4.05 / peak  5.10 cores  rss peak   2508 MB
+      -> 12/12 loci, ok 12, failed 0, skipped 0, 0.3 s/locus
+    analysis: susie_finemapping    207.00s  cpu  1418.5s  avg  6.85 / peak  7.79 cores  rss peak   3313 MB
+      -> 12/12 loci, ok 12, failed 0, skipped 0, 17.2 s/locus
+    analysis: magma_gene            17.03s  cpu    35.3s  avg  2.07 / peak  2.99 cores  rss peak   2541 MB
+      -> 12/12 loci, ok 8, failed 4, skipped 0, 1.4 s/locus
+         errors: ['Locus 2: No genes overlapping 1:96587502-96614591 in the loaded gene annotation. Nothing to annotate.', 'Locus 3: No genes overlapping 3:20563468-20727763 in the loaded gene annotation. Nothing to annotate.']
+    analysis: cojo_conditional       5.05s  cpu    17.4s  avg  3.57 / peak  4.52 cores  rss peak   2552 MB
+      -> 12/12 loci, ok 12, failed 0, skipped 0, 0.4 s/locus
+    analysis: snp_rank               2.01s  cpu     8.4s  avg  4.11 / peak  4.88 cores  rss peak   2585 MB
+      -> 12/12 loci, ok 12, failed 0, skipped 0, 0.2 s/locus
+    analysis: heritability_local    57.20s  cpu   241.0s  avg  4.20 / peak  7.24 cores  rss peak   3234 MB
+      -> 12/12 loci, ok 12, failed 0, skipped 0, 4.8 s/locus
+    heritability (LDSC, genome)     17.79s  cpu    44.1s  avg  2.50 / peak  4.48 cores  rss peak   2665 MB
+    process (incl. LD)             926.47s  cpu  2790.4s  avg  3.01 / peak  7.79 cores  rss peak   3685 MB
+    build base (LD matrices)      1310.82s  cpu  2646.7s  avg  2.02 / peak  6.60 cores  rss peak   2676 MB
+    analysis: finemap               42.20s  cpu   152.1s  avg  3.62 / peak  4.56 cores  rss peak   1123 MB
+      -> 177/177 loci, ok 177, failed 0, skipped 1, 0.2 s/locus
+    analysis: susie_finemapping    633.52s  cpu  4226.5s  avg  6.67 / peak  7.79 cores  rss peak   1900 MB
+      -> 52/177 loci, ok 52, failed 0, skipped 1, 12.2 s/locus, projected full run 2156 s
+    analysis: magma_gene           304.66s  cpu   592.5s  avg  1.94 / peak  2.97 cores  rss peak   1200 MB
+      -> 177/177 loci, ok 156, failed 21, skipped 1, 1.7 s/locus
+         errors: ['Locus 4: No genes overlapping 1:30402503-30469412 in the loaded gene annotation. Nothing to annotate.', 'Locus 20: No genes overlapping 2:60379362-60408416 in the loaded gene annotation. Nothing to annotate.']
+    analysis: cojo_conditional      56.16s  cpu   183.1s  avg  3.27 / peak  4.34 cores  rss peak   1203 MB
+      -> 177/177 loci, ok 177, failed 0, skipped 1, 0.3 s/locus
+    analysis: snp_rank               4.31s  cpu    11.9s  avg  2.77 / peak  4.08 cores  rss peak   1206 MB
+      -> 177/177 loci, ok 52, failed 125, skipped 1, 0.0 s/locus
+         errors: ['Locus 53: Run SuSiE on this locus first (the ranking uses its PIPs)', 'Locus 54: Run SuSiE on this locus first (the ranking uses its PIPs)']
+    analysis: heritability_local   601.27s  cpu  2156.2s  avg  3.59 / peak  7.70 cores  rss peak   2372 MB
+      -> 169/177 loci, ok 169, failed 0, skipped 1, 3.6 s/locus, projected full run 630 s
+    heritability (LDSC, genome)     10.60s  cpu    18.8s  avg  1.76 / peak  3.28 cores  rss peak   1517 MB
+    ALL USERS 4076.3 s, cpu avg 3.24 / peak 7.79 cores, peak rss 7496 MB, errors []
+
+Saved <scratch>/real-run2/real-20261006-193324-xmx6g.json
+concurrent EXIT 0

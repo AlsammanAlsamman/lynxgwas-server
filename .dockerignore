@@ -1,0 +1,24 @@
+# Keep local state, secrets and data out of the image build
+.git
+.claude
+.env
+server.properties
+server-data/
+projects/
+output/
+bin/
+lib/
+dist/
+benchmark/
+input/
+resources/
+refpanels/
+data_we_use/
+gwascatalog_data/
+regulatory_data/
+testdata/
+tools-bin/
+brainny-out/
+graphify-out/
+*.log
+*.pdf

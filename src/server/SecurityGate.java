@@ -6,7 +6,7 @@ import java.time.Clock;
 import java.util.*;
 
 /**
- * Front door for every request: security headers, per-IP rate limit, route allowlist, session
+ * Front door for every request: security headers, per-IP rate limit, route allowlist, workspace
  * lookup, CSRF check and request-size limit. Project-level permissions are NOT decided here;
  * handlers call {@link #requireProject} where they resolve a project id, so the check always uses
  * the exact id the handler acts on.
@@ -16,12 +16,12 @@ import java.util.*;
  */
 public class SecurityGate extends Filter {
 
-    public enum Policy { PUBLIC, SIGNED_IN }
+    public enum Policy { PUBLIC, WORKSPACE }
 
     /**
      * Per-request state. NOT HttpExchange attributes: in the JDK server those live on the
      * HttpContext and are shared by every request to the same route, which would leak one user's
-     * session into other people's requests. Keyed by the exchange object itself (identity) and
+     * workspace into other people's requests. Keyed by the exchange object itself (identity) and
      * removed when the request finishes.
      */
     private static final java.util.concurrent.ConcurrentHashMap<HttpExchange, RequestInfo> REQUESTS =
@@ -29,14 +29,14 @@ public class SecurityGate extends Filter {
 
     static final class RequestInfo {
         final String ip;
-        volatile AccountService.Session session;
+        volatile WorkspaceService.Session session;
         RequestInfo(String ip) { this.ip = ip; }
     }
     public static final String CSRF_HEADER = "X-Lynx-CSRF";
     public static final long JSON_LIMIT = 4L << 20;   // 4 MB for ordinary requests
 
     private final ServerConfig cfg;
-    private final AccountService accounts;
+    private final WorkspaceService workspaces;
     private final ProjectRegistry registry;
     private final RequestLimiter perIp;
     private final NavigableMap<String, Policy> exact = new TreeMap<>();
@@ -44,12 +44,14 @@ public class SecurityGate extends Filter {
     private final Set<String> uploadPrefixes = new HashSet<>();
     private final String cookieName;
 
-    public SecurityGate(ServerConfig cfg, AccountService accounts, ProjectRegistry registry, Clock clock) {
+    public SecurityGate(ServerConfig cfg, WorkspaceService workspaces, ProjectRegistry registry, Clock clock) {
         this.cfg = cfg;
-        this.accounts = accounts;
+        this.workspaces = workspaces;
         this.registry = registry;
         this.perIp = new RequestLimiter(600, 300, clock);
-        this.cookieName = cfg.secureCookies ? "__Host-lynx_session" : "lynx_session";
+        // __Host- requires Path=/; under a sub-path the strongest allowed prefix is __Secure-
+        this.cookieName = !cfg.secureCookies ? "lynx_workspace"
+            : cfg.basePath.isEmpty() ? "__Host-lynx_workspace" : "__Secure-lynx_workspace";
     }
 
     public SecurityGate allowExact(String path, Policy p)  { exact.put(path, p); return this; }
@@ -82,9 +84,11 @@ public class SecurityGate extends Filter {
             Policy policy = policyFor(path);
             if (policy == null) { deny(ex, 404, "Not found"); return; }
 
-            AccountService.Session session = accounts.session(cookie(ex, cookieName));
+            WorkspaceService.Session session = workspaces.session(cookie(ex, cookieName));
             info.session = session;
-            if (policy == Policy.SIGNED_IN && session == null) { deny(ex, 401, "Please sign in."); return; }
+            if (policy == Policy.WORKSPACE && session == null) {
+                deny(ex, 401, "This needs your private workspace. Reload the page and try again."); return;
+            }
 
             boolean stateChanging = method.equals("POST") || method.equals("DELETE");
             if (stateChanging && !sameOrigin(ex)) { deny(ex, 403, "Cross-site request refused."); return; }
@@ -115,7 +119,7 @@ public class SecurityGate extends Filter {
 
     // ── Helpers used by handlers ────────────────────────────────────────
 
-    public static AccountService.Session session(HttpExchange ex) {
+    public static WorkspaceService.Session session(HttpExchange ex) {
         RequestInfo info = REQUESTS.get(ex);
         return info == null ? null : info.session;
     }
@@ -126,7 +130,7 @@ public class SecurityGate extends Filter {
     }
 
     public static String userId(HttpExchange ex) {
-        AccountService.Session s = session(ex);
+        WorkspaceService.Session s = session(ex);
         return s == null ? null : s.userId;
     }
 
@@ -153,7 +157,9 @@ public class SecurityGate extends Filter {
     public String cookieName() { return cookieName; }
 
     public String sessionCookie(String token, long maxAgeSeconds) {
-        return cookieName + "=" + token + "; Path=/; HttpOnly; SameSite=Strict; Max-Age=" + maxAgeSeconds
+        // Scoped to the app's own path, so other sites on the same host never receive it
+        String path = cfg.basePath.isEmpty() ? "/" : cfg.basePath + "/";
+        return cookieName + "=" + token + "; Path=" + path + "; HttpOnly; SameSite=Strict; Max-Age=" + maxAgeSeconds
             + (cfg.secureCookies ? "; Secure" : "");
     }
 
@@ -184,7 +190,7 @@ public class SecurityGate extends Filter {
 
     private boolean sameOrigin(HttpExchange ex) {
         String origin = ex.getRequestHeaders().getFirst("Origin");
-        if (origin != null) return origin.equals(cfg.publicOrigin);
+        if (origin != null) return origin.equals(cfg.publicOrigin) || cfg.publicOrigins.contains(origin);
         // Browsers always send Origin on cross-site POST; without it, fall back to Fetch Metadata
         String site = ex.getRequestHeaders().getFirst("Sec-Fetch-Site");
         return "same-origin".equals(site);
@@ -194,8 +200,9 @@ public class SecurityGate extends Filter {
         if (cfg.trustProxy) {
             String xff = ex.getRequestHeaders().getFirst("X-Forwarded-For");
             if (xff != null && !xff.isEmpty()) {
+                // Each proxy we own appends the address it saw; the client is the entry the outermost one added
                 String[] hops = xff.split(",");
-                return hops[hops.length - 1].trim();   // the hop our own proxy appended
+                return hops[Math.max(0, hops.length - cfg.trustProxyHops)].trim();
             }
         }
         InetSocketAddress a = ex.getRemoteAddress();
