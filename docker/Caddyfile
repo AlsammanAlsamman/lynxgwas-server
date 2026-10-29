@@ -1,0 +1,20 @@
+# Caddy in front of the LYNXgwas container (docker compose --profile https): automatic HTTPS.
+# Point the DNS record of LYNXGWAS_DOMAIN (set in .env) at this machine; open ports 80 and 443.
+
+{$LYNXGWAS_DOMAIN} {
+	encode gzip
+
+	# Uploads can be large (matches max.upload.mb in server.properties)
+	request_body {
+		max_size 2GB
+	}
+
+	reverse_proxy lynxgwas:8765 {
+		# The server trusts the LAST X-Forwarded-For hop (trust.proxy=true): Caddy appends it
+		header_up X-Forwarded-For {remote_host}
+		transport http {
+			read_timeout 30m
+			write_timeout 30m
+		}
+	}
+}

@@ -9,7 +9,8 @@ import java.util.regex.*;
 
 /**
  * End-to-end test: starts the real server on a random local port and exercises it over HTTP as
- * an anonymous visitor, two separate users and a cross-site attacker.
+ * a visitor without a workspace, two separate anonymous workspaces, a second browser opening a
+ * workspace link, and a cross-site attacker.
  *
  * Runs from the app folder (it serves index.html from there) and uses a throwaway
  * projects/zz-http-test-public dataset plus a temp data folder; both are removed afterwards.
@@ -25,7 +26,7 @@ public class ServerHttpTest {
         if (!ok) failures++;
     }
 
-    /** One browser: its own session cookie and CSRF token. */
+    /** One browser: its own workspace cookie and CSRF token. */
     static class Browser {
         String cookie = "", csrf = "";
         String origin = ServerHttpTest.origin;
@@ -68,14 +69,14 @@ public class ServerHttpTest {
         cfg.dataDir = data.getPath();
         cfg.publicProjects = PUB;
         cfg.gff3File = "resources/test-annotation.gff3";   // any value: the test never parses it
+        cfg.maxNewWorkspacesPerIpPerHour = 8;
         base = origin = cfg.publicOrigin;
-        Mailer.OutboxMailer mail = new Mailer.OutboxMailer(new File(data, "outbox"));
-        ServerContext ctx = new ServerContext(cfg, Clock.systemUTC(), mail);
+        ServerContext ctx = new ServerContext(cfg, Clock.systemUTC());
         LocalServer server = new LocalServer(ctx, new ServerApi(ctx));
         server.start();
         List<String> created = new ArrayList<>();
         try {
-            run(mail, created);
+            run(created);
         } finally {
             server.stop();
             FileSafety.deleteTree(pub);
@@ -86,7 +87,7 @@ public class ServerHttpTest {
         System.exit(failures == 0 ? 0 : 1);
     }
 
-    static void run(Mailer.OutboxMailer mail, List<String> created) throws Exception {
+    static void run(List<String> created) throws Exception {
         Browser anon = new Browser();
 
         // ── Static files and headers ──
@@ -112,7 +113,7 @@ public class ServerHttpTest {
         String list = anon.get("/api/projects").body();
         check(list.contains(PUB), "public dataset listed for anonymous visitors");
         check(anon.get("/api/project/" + PUB + "/manifest").statusCode() == 200, "public dataset readable anonymously");
-        check(anon.get("/api/projects?scope=mine").statusCode() == 401, "'My projects' needs sign-in");
+        check(anon.get("/api/projects?scope=mine").statusCode() == 401, "'My projects' needs a workspace");
         check(anon.post("/api/project/" + PUB + "/config", "{\"col.chr\":\"x\"}").statusCode() == 403, "anonymous write to public dataset refused");
         check(anon.send("DELETE", "/api/project/" + PUB, null, false).statusCode() == 403, "anonymous delete of public dataset refused");
         check(anon.get("/api/project/%2E%2E/config").statusCode() == 400, "encoded '..' project id refused");
@@ -121,28 +122,34 @@ public class ServerHttpTest {
         // ── Cross-site request forgery ──
         Browser evil = new Browser();
         evil.origin = "https://evil.example";
-        check(evil.post("/api/auth/login", "{\"email\":\"a@b.co\",\"password\":\"x\"}").statusCode() == 403, "cross-origin POST refused");
+        check(evil.post("/api/auth/start", "{}").statusCode() == 403, "cross-origin POST refused");
         Browser noOrigin = new Browser();
         noOrigin.origin = null;
-        check(noOrigin.post("/api/auth/login", "{}").statusCode() == 403, "POST without Origin or Fetch-Metadata refused");
+        check(noOrigin.post("/api/auth/start", "{}").statusCode() == 403, "POST without Origin or Fetch-Metadata refused");
 
-        // ── Account: register, emailed code, verify ──
+        // ── The email/password endpoints are gone ──
+        for (String p : new String[]{"register", "verify", "resend", "login", "logout", "forgot", "reset"})
+            check(anon.post("/api/auth/" + p, "{\"email\":\"a@example.org\",\"password\":\"Blue-Tiger-Harbor-71\"}").statusCode() == 404,
+                "removed: /api/auth/" + p);
+
+        // ── Anonymous workspace: created on demand, nothing personal ──
         Browser alice = new Browser();
-        HttpResponse<String> reg = alice.post("/api/auth/register", "{\"email\":\"alice@example.org\",\"password\":\"Blue-Tiger-Harbor-71\"}");
-        check(reg.statusCode() == 200, "register accepted");
-        mail.flush();
-        Matcher cm = Pattern.compile("\\n\\s+(\\d{6})\\n").matcher(String.valueOf(mail.latestTo("alice@example.org")));
-        check(cm.find(), "verification code emailed");
-        check(alice.post("/api/auth/login", "{\"email\":\"alice@example.org\",\"password\":\"Blue-Tiger-Harbor-71\"}").statusCode() == 400,
-            "sign-in refused before email verification");
-        HttpResponse<String> ver = alice.post("/api/auth/verify", "{\"email\":\"alice@example.org\",\"code\":\"" + cm.group(1) + "\"}");
-        String setCookie = ver.headers().firstValue("Set-Cookie").orElse("");
-        check(ver.statusCode() == 200 && setCookie.contains("HttpOnly") && setCookie.contains("SameSite=Strict"), "verify signs in with an HttpOnly, SameSite=Strict cookie");
+        String meBefore = alice.get("/api/auth/me").body();
+        check(meBefore.contains("\"signed_in\":false") && alice.cookie.isEmpty(), "just visiting creates no workspace and no cookie");
+        HttpResponse<String> st = alice.post("/api/auth/start", "{}");
+        String setCookie = st.headers().firstValue("Set-Cookie").orElse("");
+        check(st.statusCode() == 200 && setCookie.contains("HttpOnly") && setCookie.contains("SameSite=Strict") && setCookie.contains("Max-Age="),
+            "starting a workspace sets an HttpOnly, SameSite=Strict, persistent cookie");
         alice.refreshCsrf();
-        check(!alice.csrf.isEmpty(), "session exposes a CSRF token to the page");
+        check(!alice.csrf.isEmpty(), "workspace exposes a CSRF token to the page");
+        String meAlice = alice.get("/api/auth/me").body();
+        check(meAlice.contains("\"signed_in\":true") && !meAlice.contains("email") && !meAlice.contains("@"), "no email anywhere in the workspace info");
+        String aliceCookie = alice.cookie;
+        alice.post("/api/auth/start", "{}");
+        check(alice.cookie.equals(aliceCookie), "starting again keeps the same workspace");
         check(anon.get("/api/auth/me").body().contains("\"signed_in\":false"),
-            "a signed-in user's session never leaks into another visitor's request on the same route");
-        check(anon.get("/api/projects?scope=mine").statusCode() == 401, "anonymous visitor still anonymous after others sign in");
+            "one visitor's workspace never leaks into another visitor's request on the same route");
+        check(anon.get("/api/projects?scope=mine").statusCode() == 401, "a visitor without a workspace still has none after others start one");
 
         // ── Own project: CSRF, create, upload, config ──
         check(alice.send("POST", "/api/my/projects", "{\"name\":\"x\"}", false).statusCode() == 403, "state change without CSRF token refused");
@@ -174,15 +181,11 @@ public class ServerHttpTest {
         check(alice.get("/api/project/" + pid + "/download?file=exports/../config.properties").statusCode() == 400, "download traversal refused");
         check(alice.get("/api/project/" + pid + "/download?file=input/gwas.tsv").statusCode() == 400, "only exports are downloadable");
 
-        // ── A second user sees nothing of Alice's ──
+        // ── A second workspace sees nothing of Alice's ──
         Browser bob = new Browser();
-        bob.post("/api/auth/register", "{\"email\":\"bob@example.org\",\"password\":\"Green-Falcon-River-22\"}");
-        mail.flush();
-        Matcher bm = Pattern.compile("\\n\\s+(\\d{6})\\n").matcher(String.valueOf(mail.latestTo("bob@example.org")));
-        bm.find();
-        bob.post("/api/auth/verify", "{\"email\":\"bob@example.org\",\"code\":\"" + bm.group(1) + "\"}");
+        bob.post("/api/auth/start", "{}");
         bob.refreshCsrf();
-        check(bob.get("/api/project/" + pid + "/config").statusCode() == 404, "another user cannot read the project (404, not 403)");
+        check(bob.get("/api/project/" + pid + "/config").statusCode() == 404, "another workspace cannot read the project (404, not 403)");
         check(bob.post("/api/delete-project", "{\"id\":\"" + pid + "\"}").statusCode() == 404, "another user cannot delete the project");
         check(bob.send("DELETE", "/api/project/" + pid, null, true).statusCode() == 404, "another user cannot DELETE the project");
         check(!bob.get("/api/projects?scope=mine").body().contains(pid), "another user's list does not include it");
@@ -205,22 +208,59 @@ public class ServerHttpTest {
         check(anon.get("/api/mvsusie-latest?job=no-such-run&locus=1").statusCode() == 404, "saved joint runs of an unknown or invisible run are 404");
         check(anon.get("/api/mvsusie-for-dataset?project=" + pid + "&locus_index=1").statusCode() == 404, "joint runs of someone else's dataset are 404");
         check(anon.get("/api/mvsusie-for-dataset?project=" + PUB + "&locus_index=1").body().contains("\"runs\":[]"), "public dataset lists only visible joint runs");
+        // Parallel requests cannot create more projects than allowed
+        List<Thread> ts = new ArrayList<>();
+        for (int i = 0; i < 12; i++) ts.add(new Thread(() -> { try { bob.post("/api/my/projects", "{\"name\":\"race\"}"); } catch (Exception ignored) {} }));
+        ts.forEach(Thread::start);
+        for (Thread t : ts) t.join();
+        Matcher bobIds = Pattern.compile("\"id\":\"(u-[a-z0-9]+)\"").matcher(bob.get("/api/projects?scope=mine").body());
+        int bobCount = 0;
+        while (bobIds.find()) { bobCount++; created.add(bobIds.group(1)); }
+        check(bobCount == 5, "12 parallel project requests create exactly the 5 allowed (" + bobCount + ")");
+
         Browser bobStolen = new Browser();
         bobStolen.cookie = bob.cookie;
         bobStolen.csrf = alice.csrf;
         check(bobStolen.post("/api/my/projects", "{\"name\":\"y\"}").statusCode() == 403, "a CSRF token only works with its own session");
 
-        // ── Sign out, account deletion ──
-        HttpResponse<String> lo = alice.post("/api/auth/logout", "{}");
-        String meAfter = alice.get("/api/auth/me").body();
-        check(meAfter.contains("\"signed_in\":false"), "logout ends the session (" + lo.statusCode() + " " + lo.body() + " -> " + meAfter + ")");
-        check(alice.post("/api/my/projects", "{\"name\":\"z\"}").statusCode() == 401, "signed-out user cannot create projects");
-        alice.post("/api/auth/login", "{\"email\":\"alice@example.org\",\"password\":\"Blue-Tiger-Harbor-71\"}");
-        alice.refreshCsrf();
-        check(alice.post("/api/my/delete-account", "{\"password\":\"wrong-password-1\"}").statusCode() == 403, "account deletion needs the password");
-        check(alice.post("/api/my/delete-account", "{\"password\":\"Blue-Tiger-Harbor-71\"}").statusCode() == 200, "account deleted");
-        check(!new File("projects", pid).exists(), "deleting the account deleted its projects");
-        check(alice.post("/api/auth/login", "{\"email\":\"alice@example.org\",\"password\":\"Blue-Tiger-Harbor-71\"}").statusCode() == 400,
-            "deleted account can no longer sign in");
+        // ── Workspace link: the same workspace in another browser ──
+        HttpResponse<String> lr = alice.post("/api/my/link", "{}");
+        Matcher lm = Pattern.compile("\"link\":\"([^\"]+)\"").matcher(lr.body());
+        check(lr.statusCode() == 200 && lm.find() && lm.group(1).startsWith(origin + "/#workspace="), "workspace link made on request");
+        String link = lm.group(1);
+        check(anon.post("/api/my/link", "{}").statusCode() == 401, "no link without a workspace");
+        Browser laptop = new Browser();
+        check(laptop.post("/api/auth/open", "{\"link\":\"" + origin + "/#workspace=wrong-token-wrong-token-wrong-token-1\"}").statusCode() == 400,
+            "a wrong link is refused");
+        check(laptop.post("/api/auth/open", "{\"link\":\"" + link + "\"}").statusCode() == 200, "the link opens the workspace in another browser");
+        laptop.refreshCsrf();
+        check(laptop.get("/api/projects?scope=mine").body().contains(pid), "the other browser sees the same projects");
+        check(!laptop.cookie.equals(alice.cookie), "each browser gets its own token");
+        HttpResponse<String> lr2 = alice.post("/api/my/link", "{}");
+        check(lr2.statusCode() == 200, "a new link can be made at any time");
+        check(new Browser().post("/api/auth/open", "{\"link\":\"" + link + "\"}").statusCode() == 400, "a new link voids the old one");
+
+        // ── Forget this browser ──
+        check(laptop.post("/api/my/forget-browser", "{}").statusCode() == 200, "a browser can forget the workspace");
+        check(laptop.get("/api/auth/me").body().contains("\"signed_in\":false"), "the forgotten browser has no workspace");
+        check(laptop.post("/api/my/projects", "{\"name\":\"z\"}").statusCode() == 401, "the forgotten browser cannot create projects");
+        check(alice.get("/api/projects?scope=mine").body().contains(pid), "the other browsers keep the workspace");
+
+        // ── Delete the workspace ──
+        check(alice.send("POST", "/api/my/delete-workspace", "{}", false).statusCode() == 403, "deleting needs the CSRF token");
+        check(alice.post("/api/my/delete-workspace", "{}").statusCode() == 200, "workspace deleted");
+        check(!new File("projects", pid).exists(), "deleting the workspace deleted its projects");
+        check(alice.get("/api/auth/me").body().contains("\"signed_in\":false"), "the deleted workspace no longer opens");
+
+        // ── Guessing links: wrong attempts are eventually refused ──
+        int wrongRefused = 0;
+        for (int i = 0; i < 15; i++)
+            if (new Browser().post("/api/auth/open", "{\"link\":\"" + Crypto.randomToken(32) + "\"}").statusCode() == 429) wrongRefused++;
+        check(wrongRefused > 0, "repeated wrong links from one IP are refused (" + wrongRefused + " of 15)");
+
+        // ── New workspaces are rate-limited per IP (last: it uses up this IP's allowance) ──
+        int refused = 0;
+        for (int i = 0; i < 15; i++) if (new Browser().post("/api/auth/start", "{}").statusCode() == 429) refused++;
+        check(refused > 0, "creating many workspaces from one IP is refused (" + refused + " of 15)");
     }
 }

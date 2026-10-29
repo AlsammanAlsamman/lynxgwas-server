@@ -12,15 +12,14 @@ import java.util.concurrent.ConcurrentHashMap;
  * nothing a user uploads or edits can change ownership. A project folder with no record is
  * public (read-only) when listed in public.projects, or when public.projects is "*".
  *
- * Retention: every user project expires {@code retentionDays} after creation. The sweep emails
- * the owner {@code warnDays} before, then deletes the folder and emails a deletion notice.
+ * Retention: every user project expires {@code retentionDays} after creation; the sweep then
+ * deletes it. Nobody is emailed (the server keeps no contact details): the page shows a countdown.
  */
 public class ProjectRegistry {
 
     public static class Entry {
         public String projectId, ownerId, name;
         public long createdAt, expiresAt;
-        public boolean warned;
     }
 
     public enum Access { NONE, READ, OWNER }
@@ -30,7 +29,7 @@ public class ProjectRegistry {
     private final Set<String> explicitPublic;
     private final boolean allUnownedPublic;
     private final Clock clock;
-    private final int retentionDays, warnDays;
+    private final int retentionDays;
     private final Map<String, Entry> entries = new ConcurrentHashMap<>();
 
     public ProjectRegistry(ServerConfig cfg, Clock clock) throws IOException {
@@ -38,7 +37,6 @@ public class ProjectRegistry {
         this.projectsDir = cfg.projectsDir();
         this.clock = clock;
         this.retentionDays = cfg.retentionDays;
-        this.warnDays = cfg.retentionWarnDays;
         this.allUnownedPublic = cfg.publicProjects.equals("*");
         this.explicitPublic = new HashSet<>();
         if (!allUnownedPublic)
@@ -109,6 +107,13 @@ public class ProjectRegistry {
         new File(registryDir, projectId + ".properties").delete();
     }
 
+    /** Disk used by every user project together (public datasets not counted). */
+    public long storageUsedByAll() {
+        long total = 0;
+        for (Entry e : entries.values()) total += FileSafety.sizeOf(new File(projectsDir, e.projectId));
+        return total;
+    }
+
     public long storageUsedBy(String userId) {
         long total = 0;
         for (Entry e : ownedBy(userId)) total += FileSafety.sizeOf(new File(projectsDir, e.projectId));
@@ -123,34 +128,15 @@ public class ProjectRegistry {
         return total <= 0 ? 0 : Math.max(0, Math.min(1, (e.expiresAt - clock.millis()) / total));
     }
 
-    /**
-     * Sends due warnings and deletes expired projects. Emails go through {@code notify}
-     * (ownerId, subject, body). Returns the number of projects deleted.
-     */
-    public int sweep(Notifier notify) {
+    /** Deletes expired projects. Returns how many. */
+    public int sweep() {
         long now = clock.millis();
         int deleted = 0;
         for (Entry e : new ArrayList<>(entries.values())) {
+            if (now < e.expiresAt) continue;
             try {
-                if (now >= e.expiresAt) {
-                    delete(e.projectId);
-                    deleted++;
-                    notify.send(e.ownerId, "project deleted",
-                        "Your project \"" + e.name + "\" reached the end of its " + retentionDays + "-day storage period "
-                        + "and has been permanently deleted from the server, together with its uploaded data and results.\n\n"
-                        + "Projects on this server are kept for " + retentionDays + " days. Download anything you want to keep "
-                        + "before the counter runs out.\n");
-                } else if (!e.warned && warnDays > 0 && now >= e.expiresAt - warnDays * 86_400_000L) {
-                    long hoursLeft = Math.max(1, (e.expiresAt - now) / 3_600_000L);
-                    String left = hoursLeft >= 48 ? (hoursLeft / 24) + " days" : hoursLeft + " hours";
-                    notify.send(e.ownerId, "project will be deleted in " + left,
-                        "Your project \"" + e.name + "\" will be permanently deleted in about " + left + ", "
-                        + "when its " + retentionDays + "-day storage period ends.\n\n"
-                        + "Download the results you want to keep (Export on the project card) before then. "
-                        + "After deletion the data cannot be recovered.\n");
-                    e.warned = true;
-                    write(e);
-                }
+                delete(e.projectId);
+                deleted++;
             } catch (IOException ex) {
                 System.err.printf("[Retention] %s: %s%n", e.projectId, ex.getMessage());
             }
@@ -158,9 +144,7 @@ public class ProjectRegistry {
         return deleted;
     }
 
-    public interface Notifier { void send(String ownerId, String subjectSuffix, String body); }
-
-    /** Deletes every project of a removed account (no emails). */
+    /** Deletes every project of a removed workspace. */
     public void deleteAllOf(String userId) {
         for (Entry e : ownedBy(userId)) {
             try { delete(e.projectId); } catch (IOException ex) { System.err.println("[Registry] " + ex.getMessage()); }
@@ -176,7 +160,6 @@ public class ProjectRegistry {
         p.setProperty("name", e.name == null ? "" : e.name);
         p.setProperty("created", String.valueOf(e.createdAt));
         p.setProperty("expires", String.valueOf(e.expiresAt));
-        p.setProperty("warned", String.valueOf(e.warned));
         File tmp = new File(registryDir, e.projectId + ".properties.tmp");
         try (Writer w = new OutputStreamWriter(new FileOutputStream(tmp), StandardCharsets.UTF_8)) { p.store(w, null); }
         FileSafety.restrictToOwner(tmp);
@@ -195,7 +178,6 @@ public class ProjectRegistry {
         e.name = p.getProperty("name", "");
         e.createdAt = Long.parseLong(p.getProperty("created", "0"));
         e.expiresAt = Long.parseLong(p.getProperty("expires", "0"));
-        e.warned = Boolean.parseBoolean(p.getProperty("warned", "false"));
         return e;
     }
 }

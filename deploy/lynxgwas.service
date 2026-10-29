@@ -3,7 +3,7 @@
 # (systemctl --user) instead; see docs/DEPLOY.md.
 #
 #   sudo cp lynxgwas.service /etc/systemd/system/ && sudo systemctl enable --now lynxgwas
-#   secrets:  sudo systemctl edit lynxgwas   ->  [Service] Environment=LYNX_SMTP_PASSWORD=...
+#   secret:   sudo systemctl edit lynxgwas   ->  [Service] Environment=LYNX_CODE_PEPPER=...
 
 [Unit]
 Description=LYNXgwas Server

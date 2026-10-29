@@ -1,0 +1,34 @@
+
+== PGC ADHD 2019: 328 MB, -Xmx6g ==
+    upload                          20.66s  cpu    20.9s  avg  1.01 / peak  1.82 cores  rss peak    310 MB
+    loci-identify (PLINK clump)    142.20s  cpu   181.8s  avg  1.28 / peak  3.04 cores  rss peak   6501 MB
+      -> 12 loci
+    qc (lambda GC)                  34.59s  cpu    44.6s  avg  1.29 / peak  2.75 cores  rss peak   6013 MB
+    process (incl. LD)             157.00s  cpu   162.1s  avg  1.03 / peak  9.67 cores  rss peak   5781 MB
+    build base (LD matrices)       267.32s  cpu   492.8s  avg  1.84 / peak  3.18 cores  rss peak   6445 MB
+    analysis: finemap                5.11s  cpu    14.7s  avg  2.99 / peak  3.98 cores  rss peak   4867 MB
+      -> 12/12 loci, ok 12, failed 0, skipped 0, 0.4 s/locus
+    analysis: susie_finemapping    317.77s  cpu  1645.7s  avg  5.18 / peak  7.50 cores  rss peak   5782 MB
+      -> 12/12 loci, ok 12, failed 0, skipped 0, 26.5 s/locus
+    analysis: magma_gene            27.17s  cpu    26.5s  avg  0.98 / peak  1.66 cores  rss peak   4743 MB
+      -> 12/12 loci, ok 8, failed 4, skipped 0, 2.3 s/locus
+         errors: ['Locus 2: No genes overlapping 1:96587502-96614591 in the loaded gene annotation. Nothing to annotate.', 'Locus 3: No genes overlapping 3:20563468-20727763 in the loaded gene annotation. Nothing to annotate.']
+    analysis: cojo_conditional      14.11s  cpu    25.5s  avg  1.81 / peak  2.80 cores  rss peak   4986 MB
+      -> 12/12 loci, ok 12, failed 0, skipped 0, 1.2 s/locus
+    analysis: snp_rank               5.19s  cpu    12.6s  avg  2.40 / peak  3.15 cores  rss peak   4753 MB
+      -> 12/12 loci, ok 12, failed 0, skipped 0, 0.4 s/locus
+    analysis: heritability_local    58.25s  cpu   176.6s  avg  3.04 / peak  7.09 cores  rss peak   5460 MB
+      -> 12/12 loci, ok 12, failed 0, skipped 0, 4.9 s/locus
+    heritability (LDSC, genome)     18.31s  cpu    26.1s  avg  1.42 / peak  3.71 cores  rss peak   4809 MB
+    WHOLE RUN 1069.5 s, peak rss 6501 MB, project disk 1234 MB
+
+== PGC3 Schizophrenia EUR: 228 MB, -Xmx6g ==
+    upload                          31.98s  cpu    32.6s  avg  1.02 / peak  3.16 cores  rss peak    414 MB
+    loci-identify (PLINK clump)      0.52s  cpu     0.2s  avg  0.35 / peak  0.00 cores  rss peak    414 MB
+    ERROR: AssertionError({'pct': 100, 'current_step': 'Error', 'step_index': 1, 'total_steps': 6, 'done': True, 'error': 'Missing required columns: chr=CHROM pos=POS p=PVAL', 'candidate_snps': 0, 'seed_snps': 0, 'loci_found': 0, 'total_chromosomes': 0, 'current_chromosome': 0})
+
+== GIANT Height 2018: 44 MB, -Xmx6g ==
+    upload                           2.72s  cpu     3.6s  avg  1.31 / peak  1.85 cores  rss peak    337 MB
+    loci-identify (PLINK clump)    171.23s  cpu   216.5s  avg  1.26 / peak  2.77 cores  rss peak   5840 MB
+      -> 1345 loci
+    qc (lambda GC)                   4.98s  cpu     8.2s  avg  1.69 / peak  3.16 cores  rss peak   5590 MB

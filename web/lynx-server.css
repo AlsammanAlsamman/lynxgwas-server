@@ -1,4 +1,4 @@
-/* LYNXgwas Server: account bar, auth dialogs, scope toggle, retention countdown, toasts. */
+/* LYNXgwas Server: workspace bar and panel, scope toggle, retention countdown, toasts. */
 
 #lx-account { margin-left: auto; display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; }
 #lx-account.floating { position: fixed; top: 0.6rem; right: 0.8rem; z-index: 900; background: #fff;
@@ -7,11 +7,11 @@
 .lx-btn { font: inherit; border: 1px solid #cbd5e1; background: #fff; color: #1a1a2e; border-radius: 6px;
   padding: 0.3rem 0.8rem; cursor: pointer; }
 .lx-btn:hover { background: #f1f5f9; }
-.lx-btn.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
-.lx-btn.primary:hover { background: #1d4ed8; }
+.lx-btn.primary { background: #0F6E56; border-color: #0F6E56; color: #fff; }
+.lx-btn.primary:hover { background: #0b5a46; }
 .lx-btn.danger { background: #dc2626; border-color: #dc2626; color: #fff; }
 .lx-btn:disabled { opacity: 0.6; cursor: wait; }
-.lx-link { font: inherit; background: none; border: none; color: #2563eb; cursor: pointer; padding: 0.2rem; text-decoration: underline; }
+.lx-link { font: inherit; background: none; border: none; color: #0F6E56; cursor: pointer; padding: 0.2rem; text-decoration: underline; }
 header .lx-link { color: inherit; }
 
 .lx-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); display: flex; align-items: center;
@@ -24,7 +24,7 @@ header .lx-link { color: inherit; }
 .lx-form { display: flex; flex-direction: column; gap: 0.7rem; }
 .lx-field { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem; color: #334155; }
 .lx-field input { font: inherit; font-size: 0.95rem; padding: 0.5rem 0.6rem; border: 1px solid #cbd5e1; border-radius: 6px; }
-.lx-field input:focus { outline: 2px solid #93c5fd; border-color: #2563eb; }
+.lx-field input:focus { outline: 2px solid rgba(15,110,86,0.3); border-color: #0F6E56; }
 .lx-note { font-size: 0.82rem; color: #475569; margin: 0; }
 .lx-msg { font-size: 0.85rem; min-height: 0; }
 .lx-msg.error { color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 0.4rem 0.6rem; margin-bottom: 0.5rem; }
@@ -61,3 +61,9 @@ header .lx-link { color: inherit; }
 @media (max-width: 640px) {
   #lx-account .lx-email { display: none; }
 }
+
+/* Workspace bar in the header */
+header #lx-account .lx-btn { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.35); color: #fff; }
+header #lx-account .lx-btn:hover { background: rgba(255,255,255,0.22); }
+.lx-extra input[type=text] { flex: 1; min-width: 0; font: inherit; font-size: 0.8rem; padding: 0.4rem 0.5rem; border: 1px solid #cbd5e1; border-radius: 6px; }
+.lx-dialog hr { border: none; border-top: 1px solid #e5e7eb; margin: 0.4rem 0; }

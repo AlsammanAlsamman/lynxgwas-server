@@ -105,8 +105,7 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   src\server\Crypto.java ^
   src\server\FileSafety.java ^
   src\server\ServerConfig.java ^
-  src\server\Mailer.java ^
-  src\server\AccountService.java ^
+  src\server\WorkspaceService.java ^
   src\server\ProjectRegistry.java ^
   src\server\RequestLimiter.java ^
   src\server\JobLimiter.java ^

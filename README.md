@@ -2,7 +2,8 @@
 
 **This is the online, multi-user edition of LYNXgwas.** It is maintained separately from the
 desktop app (`LYNXgwas`) and differs from it in these ways:
-- accounts with email-verified sign-up,
+- no accounts: each browser gets an anonymous private workspace (no email, no password, nothing
+  that identifies a person), which a private link can open on another computer,
 - private projects that are deleted automatically 15 days after creation,
 - read-only public datasets,
 - no AI agent,
@@ -41,7 +42,7 @@ that can drive the same actions through natural language, running against a full
 default — see [How it works](#how-it-works) below for exactly what stays local and what doesn't.
 
 An online, multi-user edition with the same analyses is maintained as
-[LYNXgwas Server](https://github.com/AlsammanAlsamman/lynxgwas-server): accounts, private projects
+[LYNXgwas Server](https://github.com/AlsammanAlsamman/lynxgwas-server): anonymous private workspaces, projects
 deleted after 15 days, read-only public datasets, and no AI agent or access to server files.
 
 ## How it works

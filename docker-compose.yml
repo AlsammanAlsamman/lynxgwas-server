@@ -1,0 +1,80 @@
+# LYNXgwas Server in an isolated, locked-down container.
+#
+#   cp .env.example .env            # then edit: reference folder, secrets, limits
+#   edit docker/server.docker.properties   # public address, storage limits, reference file names
+#   docker compose up -d --build                    # app on 127.0.0.1:8765 (behind your own proxy)
+#   docker compose --profile https up -d --build    # app + Caddy with automatic HTTPS on 80/443
+#
+# The container cannot see the host's files except the data volume (read-write) and the
+# reference folder (read-only); it runs as an unprivileged user with no Linux capabilities and
+# a read-only system, and cannot use more CPU, memory or processes than the limits below.
+
+services:
+  lynxgwas:
+    build: .
+    image: lynxgwas-server:local
+    restart: unless-stopped
+    init: true
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "${LYNXGWAS_CPUS:-8}"
+          memory: "${LYNXGWAS_MEMORY:-24g}"
+          pids: 1024
+    tmpfs:
+      # PLINK/R scratch files; noexec so nothing written there can be run
+      - /tmp:size=${LYNXGWAS_TMP_SIZE:-4g},mode=1777,noexec,nosuid,nodev
+    environment:
+      JAVA_OPTS: "${JAVA_OPTS:--Xmx6g}"
+      LYNX_CODE_PEPPER: "${LYNX_CODE_PEPPER:-}"
+      LYNXGWAS_LDSC: /reference/ldsc/eur_w_ld_chr
+      LYNXGWAS_CADD: /reference/cadd/gnomad.genomes.r2.1.1.snv.tsv.gz
+      LYNXGWAS_PLINK_BUDGET_MB: "${LYNXGWAS_PLINK_BUDGET_MB:-8000}"
+    volumes:
+      - lynxgwas-data:/data
+      - ./docker/server.docker.properties:/config/server.properties:ro
+      - "${LYNXGWAS_REFERENCE_DIR:?set LYNXGWAS_REFERENCE_DIR in .env}:/reference:ro"
+    ports:
+      # Host loopback only: never reachable from outside without the reverse proxy
+      - "127.0.0.1:${LYNXGWAS_PORT:-8765}:8765"
+    networks: [lynxgwas]
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options: { max-size: "50m", max-file: "5" }
+
+  caddy:
+    profiles: [https]
+    image: caddy:2.8
+    restart: unless-stopped
+    depends_on: [lynxgwas]
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs: [/tmp]
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      LYNXGWAS_DOMAIN: "${LYNXGWAS_DOMAIN:-lynxgwas.example.org}"
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [lynxgwas]
+
+volumes:
+  lynxgwas-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  lynxgwas:

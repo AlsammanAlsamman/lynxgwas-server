@@ -1,0 +1,32 @@
+Machine: {'cpus': 8, 'mem_total_gb': 23.3, 'java': 'openjdk version "21.0.12.1" 2026-08-18', 'xmx': '2g'}
+
+== Single user, 10M SNPs (593 MB), -Xmx2g ==
+    upload                          10.54s  cpu    10.1s  avg  0.97 / peak  1.42 cores  rss peak    341 MB
+    loci-identify                    8.69s  cpu    12.1s  avg  1.37 / peak  2.97 cores  rss peak    435 MB
+    qc (lambda GC)                   8.93s  cpu    16.6s  avg  1.88 / peak  3.44 cores  rss peak   1640 MB
+    process project                 26.14s  cpu    46.2s  avg  1.76 / peak  3.88 cores  rss peak   1743 MB
+    open viewer (12 reads)           0.03s  cpu     0.0s  avg  0.00 / peak  0.00 cores  rss peak    938 MB
+
+== 4 users processing 5M at the same time, -Xmx2g ==
+    upload                           3.06s  cpu    12.2s  avg  3.76 / peak  4.24 cores  rss peak    354 MB
+    upload                           3.39s  cpu    13.7s  avg  3.91 / peak  4.36 cores  rss peak    357 MB
+    upload                           3.74s  cpu    15.1s  avg  4.01 / peak  4.99 cores  rss peak    366 MB
+    upload                           3.78s  cpu    15.1s  avg  4.01 / peak  4.99 cores  rss peak    366 MB
+    loci-identify                    4.05s  cpu    17.5s  avg  4.30 / peak  5.41 cores  rss peak    892 MB
+    loci-identify                    3.52s  cpu    14.6s  avg  4.12 / peak  4.49 cores  rss peak    892 MB
+    loci-identify                    3.52s  cpu    14.6s  avg  4.12 / peak  4.49 cores  rss peak    892 MB
+    loci-identify                    4.03s  cpu    16.6s  avg  4.10 / peak  4.91 cores  rss peak    903 MB
+    qc (lambda GC)                   8.12s  cpu    43.7s  avg  5.36 / peak  6.86 cores  rss peak   2232 MB
+    qc (lambda GC)                   8.08s  cpu    43.7s  avg  5.36 / peak  6.86 cores  rss peak   2232 MB
+    qc (lambda GC)                   8.26s  cpu    43.7s  avg  5.36 / peak  6.86 cores  rss peak   2232 MB
+    qc (lambda GC)                   7.96s  cpu    43.1s  avg  5.45 / peak  6.86 cores  rss peak   2232 MB
+    process project                 26.48s  cpu   138.0s  avg  5.19 / peak  6.69 cores  rss peak   2289 MB
+    process project                 26.49s  cpu   138.0s  avg  5.19 / peak  6.69 cores  rss peak   2289 MB
+    process project                 26.50s  cpu   138.0s  avg  5.19 / peak  6.69 cores  rss peak   2289 MB
+    process project                 26.50s  cpu   138.0s  avg  5.19 / peak  6.69 cores  rss peak   2289 MB
+    open viewer (12 reads)           0.08s  cpu     0.0s  avg  0.00 / peak  0.00 cores  rss peak   2292 MB
+    open viewer (12 reads)           0.09s  cpu     0.0s  avg  0.00 / peak  0.00 cores  rss peak   2292 MB
+    open viewer (12 reads)           0.08s  cpu     0.0s  avg  0.00 / peak  0.00 cores  rss peak   2292 MB
+    open viewer (12 reads)           0.10s  cpu     0.0s  avg  0.00 / peak  0.00 cores  rss peak   2292 MB
+
+Saved <scratch>/run-xmx2g/results-20261006-130622-xmx2g.json
