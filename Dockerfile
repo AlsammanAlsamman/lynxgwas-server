@@ -53,6 +53,7 @@ COPY --from=build /src/index.html /src/viewer.html /src/serpent_plot.html /src/g
 COPY assets/ assets/
 COPY web/ web/
 COPY tools/ tools/
+COPY regulatory_links/ regulatory_links/
 COPY docs/images/ docs/images/
 COPY config/global.json /app/defaults/global.json
 COPY docker/entrypoint.sh /usr/local/bin/lynxgwas-entrypoint

@@ -435,7 +435,6 @@ public class LocalServer {
             }
 
             Main.PipelineResult result = Main.runPipeline(cfg, projectDir, pt);
-            pt.done = true;
 
             // Write project.json
             Set<String> uniqueSnps = new HashSet<>();
@@ -458,6 +457,9 @@ public class LocalServer {
 
             setProjectState(id, result.config, result.gff, result.loci, result.outputs);
             System.out.printf("[Server] Project '%s' processed: %d loci%n", id, meta.lociCount);
+            // Only now: the page treats "done" as "ready", and a next step started earlier was
+            // refused because this job still held the user's job slot
+            pt.done = true;
         } catch (Exception e) {
             pt.phase = "Error: " + e.getMessage();
             pt.done = true;
