@@ -128,7 +128,7 @@ public class LocalServer {
         if (ps != null && ps.config != null && ps.loci != null) return ps;
         try {
             Config cfg = Config.loadFromProject(projectDir);
-            GffParser gff = GffParser.parse(cfg);
+            GffParser gff = sharedGff(cfg);
             List<Locus> loci = new ArrayList<>();
             List<LocusOutput> outputs = new ArrayList<>();
             // Reconstruct state from manifest + locus JSON files
@@ -238,6 +238,7 @@ public class LocalServer {
         route("/api/delete-project",   this::projectDelete,   USER, true);
         route("/api/project/",         this::projectRouter,   PUB,  false);
         route("/api/reference-options", this::referenceOptions, PUB, true);
+        route("/api/sce2g/info",       this::sce2gInfoEndpoint, PUB, true);
 
         // rsID recovery, locus identification, export
         route("/api/rsid-recover",      this::rsidRecover,          USER, true);
@@ -293,7 +294,21 @@ public class LocalServer {
         http.createContext(path, h).getFilters().add(ctx.gate);
     }
 
-    public void start() { http.start(); }
+    public void start() {
+        http.start();
+        warmProjectsGeneAnnotation();
+        // scE2G links into memory in the background (~150 MB, a few seconds), so the first locus does not wait on them
+        if (Sce2gLinks.available()) {
+            Thread t = new Thread(() -> {
+                long t0 = System.currentTimeMillis();
+                try { Sce2gLinks.loadAll(Sce2gLinks.select("all")); } catch (Exception ignored) {}
+                System.out.printf("[scE2G] all cell types loaded (%d ms)%n", System.currentTimeMillis() - t0);
+                System.gc();   // hand the file-reading memory back to the system (the links themselves are ~150 MB)
+            }, "sce2g-preload");
+            t.setDaemon(true);
+            t.start();
+        }
+    }
     public void stop()  { http.stop(0); }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -472,6 +487,281 @@ public class LocalServer {
         System.out.printf("[Server] Deleted project '%s'%n", id);
     }
 
+    // ── scE2G enhancer-gene links (regulatory_links/sce2g, see Sce2gLinks) ──
+
+    private final Set<String> sce2gWarmed = ConcurrentHashMap.newKeySet();
+
+    /** Opening a project's viewer loads its default scE2G cell types in the background, so its first locus is quick. */
+    private void warmSce2g(String projectId, String projectDir) {
+        if (!Sce2gLinks.available() || !sce2gWarmed.add(projectId)) return;
+        Thread t = new Thread(() -> {
+            try {
+                Config cfg = Config.loadFromProject(projectDir);
+                String sel = Sce2gLinks.defaultPreset(GeneConstellationBuilder.diseaseGroupOf(projectId, cfg.diseaseName));
+                Sce2gLinks.loadAll(Sce2gLinks.select(sel));          // this project's cell types first
+                Sce2gLinks.loadAll(Sce2gLinks.select("all"));        // then the rest, for the cell-type selector
+            } catch (Exception ignored) {}
+        }, "sce2g-warm");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /** The cell-type selection for a request: ?cts=, else the default for the project's disease. */
+    private String sce2gSelection(HttpExchange ex, String projectId, Config cfg) throws IOException {
+        String q = queryParam(ex, "cts");
+        if (q != null && !q.trim().isEmpty()) return q.trim();
+        return Sce2gLinks.defaultPreset(GeneConstellationBuilder.diseaseGroupOf(projectId, cfg.diseaseName));
+    }
+
+    private static boolean isGrch38(Config cfg) {
+        String b = cfg.genomeBuild == null ? "" : cfg.genomeBuild.toLowerCase(Locale.ROOT);
+        return b.contains("38");
+    }
+
+    /** The latest SuSiE run's credible-set SNPs of a locus: {pos, pip}. */
+    private static List<double[]> credibleSetSnps(Config cfg, Locus locus) {
+        List<double[]> out = new ArrayList<>();
+        RunSummary rs = latestRuns(cfg, locus).get("susie_finemapping");
+        if (rs == null) return out;
+        File f = new File(new File(new File(BaseStepPipeline.analysisDir(cfg, locus), "runs"), rs.runId), "result.tsv");
+        try {
+            List<String> lines = Files.readAllLines(f.toPath());
+            List<String> h = Arrays.asList(lines.get(0).split("\t", -1));
+            int iP = h.indexOf("pos"), iPip = h.indexOf("susie_pip"), iCs = h.indexOf("susie_cs");
+            for (int r = 1; r < lines.size(); r++) {
+                String[] x = lines.get(r).split("\t", -1);
+                if (iCs < 0 || x.length <= iCs || x[iCs].isEmpty() || x[iCs].equals("NA") || x[iCs].equals("0")) continue;
+                try { out.add(new double[]{Long.parseLong(x[iP]), Double.parseDouble(x[iPip])}); } catch (NumberFormatException ignored) {}
+            }
+        } catch (Exception ignored) {}
+        return out;
+    }
+
+    private Map<String, Object> sce2gInfo(String preset) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("available", Sce2gLinks.available());
+        m.put("resource", "scE2G");
+        m.put("citation", Sce2gLinks.citation());
+        m.put("threshold", Sce2gLinks.thresholdText());
+        m.put("preset", preset);
+        List<Object> presets = new ArrayList<>();
+        for (String[] p : Sce2gLinks.presets()) {
+            Map<String, Object> e = new LinkedHashMap<>();
+            e.put("id", p[0]); e.put("label", p[1]); e.put("n", Sce2gLinks.select(p[0]).size());
+            presets.add(e);
+        }
+        m.put("presets", presets);
+        return m;
+    }
+
+    // GET /api/project/{id}/locus/{n}/sce2g?cts=<preset or ids> — elements, links and the cell-type strip of a locus
+    // ── LD for a zoomed range: the locus's reference-panel subset (plink_subsets/locus_N) covers the whole
+    //    plot window, so the triangle can show the SNPs actually on screen, not only the stored ~100 around the lead ──
+    private final Map<String, String> ldRegionCache = Collections.synchronizedMap(new LinkedHashMap<String, String>(64, 0.75f, true) {
+        @Override protected boolean removeEldestEntry(Map.Entry<String, String> e) { return size() > 200; }
+    });
+
+    private static String plinkForLd(Config cfg) {
+        String p = PlinkSubsetter.findPlink(cfg);
+        if (p != null) return p;
+        try {   // the app's own bin/ folder (the working directory may be a separate workspace)
+            File codeDir = new File(LocalServer.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+            for (String c : new String[]{"plink.exe", "plink"}) {
+                File f = new File(codeDir.isDirectory() ? codeDir : codeDir.getParentFile(), c);
+                if (f.isFile()) return f.getAbsolutePath();
+            }
+        } catch (Exception ignored) {}
+        return null;
+    }
+
+    // GET /api/project/{id}/locus/{n}/ld-region?from=&to=&max=150 — {available, snps, matrix, snp_count, in_range}
+    private void projectLocusLdRegion(HttpExchange ex, String projectId, String projectDir, String n) throws IOException {
+        Map<String, String> q = new HashMap<>();
+        String rq = ex.getRequestURI().getRawQuery();
+        if (rq != null) for (String kv : rq.split("&")) {
+            int e = kv.indexOf('=');
+            if (e > 0) q.put(kv.substring(0, e), URLDecoder.decode(kv.substring(e + 1), "UTF-8"));
+        }
+        long from, to;
+        int max;
+        try {
+            from = (long) Double.parseDouble(q.getOrDefault("from", ""));
+            to = (long) Double.parseDouble(q.getOrDefault("to", ""));
+            max = Math.max(2, Math.min(300, Integer.parseInt(q.getOrDefault("max", "150"))));
+        } catch (NumberFormatException e) {
+            respond(ex, 400, "application/json", "{\"error\":\"from and to are required\"}".getBytes("UTF-8"));
+            return;
+        }
+        String subPrefix = new File(projectDir, "plink_subsets/locus_" + n).getAbsolutePath();
+        File locusJson = new File(projectDir, "data/locus_" + n + ".json");
+        String key = projectId + "|" + n + "|" + from + "|" + to + "|" + max;
+        String cached = ldRegionCache.get(key);
+        if (cached != null) { respond(ex, 200, "application/json", cached.getBytes("UTF-8")); return; }
+        Map<String, Object> out = new LinkedHashMap<>();
+        try {
+            Config cfg = Config.loadFromProject(projectDir);
+            String plink = plinkForLd(cfg);
+            if (!new File(subPrefix + ".bed").isFile() || !locusJson.isFile() || plink == null) {
+                // e.g. a results-only project (example pack): no genotypes to compute from; the viewer keeps the stored matrix
+                out.put("available", false);
+                out.put("reason", plink == null ? "PLINK not found" : "no reference-panel subset for this locus");
+                respond(ex, 200, "application/json", MiniJson.encode(out).getBytes("UTF-8"));
+                return;
+            }
+            Map<String, Object> d = MiniJson.asObject(MiniJson.parse(new String(Files.readAllBytes(locusJson.toPath()), "UTF-8")));
+            Map<Long, String> idByPos = new HashMap<>();
+            for (Object o : MiniJson.asArray(d.get("gwas_snps"))) {
+                Map<String, Object> g = MiniJson.asObject(o);
+                idByPos.putIfAbsent(((Number) g.get("pos")).longValue(), String.valueOf(g.get("id")));
+            }
+            Map<String, Object> top = MiniJson.asObject(d.get("top_snp"));
+            String topBim = top != null && top.get("bim_id") != null ? String.valueOf(top.get("bim_id")) : null;
+            int[] inRange = new int[2];
+            LocusOutput.LdTriangle tri = LdCalculator.regionTriangle(subPrefix, plink, from, to, idByPos, topBim, max,
+                new File(projectDir, "tmp"), inRange);
+            out.put("available", true);
+            out.put("in_range", inRange[0]);
+            out.put("no_ld", inRange[1]);   // of the candidates, SNPs monomorphic in the reference panel (left out)
+            if (tri == null) { out.put("snp_count", 0); out.put("snps", new ArrayList<>()); out.put("matrix", new ArrayList<>()); }
+            else {
+                out.put("snp_count", tri.snpCount);
+                List<Object> snps = new ArrayList<>();
+                for (LocusOutput.LdTriangle.LdSnp sn : tri.snps) {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("id", sn.id); m.put("rank", sn.rank); m.put("bim_id", sn.bimId); m.put("pos", sn.pos);
+                    m.put("is_top_snp", sn.isTopSnp);
+                    snps.add(m);
+                }
+                out.put("snps", snps);
+                List<Object> rows = new ArrayList<>();
+                for (double[] r : tri.matrix) {
+                    List<Object> row = new ArrayList<>(r.length);
+                    for (double v : r) row.add(Double.isNaN(v) ? null : Math.round(v * 1000) / 1000.0);
+                    rows.add(row);
+                }
+                out.put("matrix", rows);
+            }
+            String body = MiniJson.encode(out);
+            ldRegionCache.put(key, body);
+            respond(ex, 200, "application/json", body.getBytes("UTF-8"));
+        } catch (Exception e) {
+            respond(ex, 500, "application/json", ("{\"error\":\"" + escJ(String.valueOf(e.getMessage())) + "\"}").getBytes("UTF-8"));
+        }
+    }
+
+    private void projectLocusSce2g(HttpExchange ex, String projectId, String projectDir, String n) throws IOException {
+        if (!Sce2gLinks.available()) { respond(ex, 200, "application/json", "{\"available\":false}".getBytes()); return; }
+        ProjectState ps = ensureProjectState(projectId, projectDir);
+        if (ps == null || ps.outputs == null) { respond(ex, 503, "application/json", "{\"error\":\"Project not loaded\"}".getBytes()); return; }
+        int idx;
+        try { idx = Integer.parseInt(n); } catch (NumberFormatException e) { respond(ex, 400, "application/json", "{\"error\":\"bad locus\"}".getBytes()); return; }
+        LocusOutput lo = null;
+        for (LocusOutput o : ps.outputs) if (o.locusIndex == idx) lo = o;
+        Locus locus = null;
+        for (Locus l : ps.loci) if (l.index == idx) locus = l;
+        if (lo == null || locus == null) { respond(ex, 404, "application/json", "{\"error\":\"locus not found\"}".getBytes()); return; }
+        String sel = sce2gSelection(ex, projectId, ps.config);
+        List<Sce2gLinks.CellType> cts = Sce2gLinks.select(sel);
+        boolean b38 = isGrch38(ps.config);
+        long lead = lo.topSnp != null ? lo.topSnp.pos : (lo.start + lo.end) / 2;
+        Map<String, Object> out = sce2gInfo(sel);
+        out.put("build", b38 ? "GRCh38" : "GRCh37");
+        out.put("lead", lead);
+        out.put("lead_snp", lo.topSnp != null ? lo.topSnp.id : "");
+        out.put("window", Arrays.asList(lo.paddedStart, lo.paddedEnd));
+        out.putAll(Sce2gLinks.locus(cts, b38, lo.chr, lo.paddedStart, lo.paddedEnd, lead, credibleSetSnps(ps.config, locus)));
+        respond(ex, 200, "application/json", MiniJson.encode(out).getBytes("UTF-8"));
+    }
+
+    // GET /api/project/{id}/sce2g-stats?cts=<preset or ids>[&refresh=1] — where the lead SNPs sit relative to the
+    // scE2G elements, per-cell-type enrichment against matched random SNPs, and credible-set SNPs in elements per locus.
+    // Cached in the project folder per selection.
+    private void projectSce2gStats(HttpExchange ex, String projectId, String projectDir) throws IOException {
+        if (!Sce2gLinks.available()) { respond(ex, 200, "application/json", "{\"available\":false}".getBytes()); return; }
+        ProjectState ps = ensureProjectState(projectId, projectDir);
+        if (ps == null || ps.outputs == null || ps.gff == null) {
+            respond(ex, 503, "application/json", "{\"error\":\"Project not loaded\"}".getBytes()); return;
+        }
+        String sel = sce2gSelection(ex, projectId, ps.config);
+        List<Sce2gLinks.CellType> cts = Sce2gLinks.select(sel);
+        boolean b38 = isGrch38(ps.config);
+        StringBuilder key = new StringBuilder("v1|" + sel + "|" + (b38 ? 38 : 37));
+        for (Sce2gLinks.CellType c : cts) key.append('|').append(c.id).append(':').append(c.pairs);
+        List<Sce2gLinks.Snp> snps = new ArrayList<>();
+        Map<Integer, Locus> lociByIndex = new HashMap<>();
+        for (Locus l : ps.loci) lociByIndex.put(l.index, l);
+        for (LocusOutput o : ps.outputs) {
+            Locus l = lociByIndex.get(o.locusIndex);
+            if (o.topSnp == null || l == null || BaseStepPipeline.overlapsMhc(l, ps.config.genomeBuild)) continue;
+            snps.add(new Sce2gLinks.Snp("Locus " + o.locusIndex, o.topSnp.id, o.chr, o.topSnp.pos,
+                o.nearestGenes.isEmpty() ? "" : o.nearestGenes.get(0)));
+            key.append('|').append(o.locusIndex).append(':').append(o.topSnp.pos);
+        }
+        String cacheKey = Integer.toHexString(key.toString().hashCode()) + "-" + snps.size();
+        File cache = new File(projectDir, "sce2g_stats." + sel.replaceAll("[^A-Za-z0-9_-]", "_") + ".json");
+        if (!"1".equals(queryParam(ex, "refresh")) && cache.isFile()) {
+            String j = new String(Files.readAllBytes(cache.toPath()), "UTF-8");
+            if (j.contains("\"cache_key\":\"" + cacheKey + "\"")) { respond(ex, 200, "application/json", j.getBytes("UTF-8")); return; }
+        }
+        Map<String, long[]> tss = new HashMap<>();
+        for (Map.Entry<String, List<Gene>> en : ps.gff.genesByChromosome().entrySet()) {
+            long[] t = new long[en.getValue().size()];
+            int k = 0;
+            for (Gene g : en.getValue()) t[k++] = "-".equals(g.strand) ? g.end : g.start;
+            Arrays.sort(t);
+            tss.put(en.getKey().startsWith("chr") ? en.getKey().substring(3) : en.getKey(), t);
+        }
+        Map<String, Object> out = sce2gInfo(sel);
+        out.putAll(Sce2gLinks.stats(cts, b38, snps, tss, 1000, 20261007L));
+        // credible-set SNPs inside elements, and the genes they link to, per locus
+        List<Object> csLoci = new ArrayList<>();
+        int withCs = 0, withCsIn = 0;
+        for (LocusOutput o : ps.outputs) {
+            Locus l = lociByIndex.get(o.locusIndex);
+            if (o.topSnp == null || l == null || BaseStepPipeline.overlapsMhc(l, ps.config.genomeBuild)) continue;
+            List<double[]> cs = credibleSetSnps(ps.config, l);
+            if (cs.isEmpty()) continue;
+            withCs++;
+            Map<String, Object> r = Sce2gLinks.locus(cts, b38, o.chr, o.paddedStart, o.paddedEnd, o.topSnp.pos, cs);
+            List<Object> in = MiniJson.asArray(r.get("cs_in_elements"));
+            if (in.isEmpty()) continue;
+            withCsIn++;
+            double pipIn = 0;
+            for (Object x : in) pipIn += ((Number) MiniJson.asObject(x).get("pip")).doubleValue();
+            List<Object> gs = MiniJson.asArray(r.get("cs_gene_scores"));
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("locus", o.locusIndex); row.put("gene", o.nearestGenes.isEmpty() ? "" : o.nearestGenes.get(0));
+            row.put("cs_snps", cs.size()); row.put("cs_snps_in_elements", in.size()); row.put("pip_in_elements", Sce2gLinks.round(pipIn));
+            row.put("top_target", gs.isEmpty() ? "" : MiniJson.asObject(gs.get(0)).get("gene"));
+            row.put("top_target_score", gs.isEmpty() ? 0 : MiniJson.asObject(gs.get(0)).get("score"));
+            row.put("targets", gs.size() > 5 ? gs.subList(0, 5) : gs);
+            csLoci.add(row);
+        }
+        csLoci.sort((a, b) -> Double.compare(((Number) MiniJson.asObject(b).get("pip_in_elements")).doubleValue(),
+                                             ((Number) MiniJson.asObject(a).get("pip_in_elements")).doubleValue()));
+        out.put("cs_loci_with_sets", withCs);
+        out.put("cs_loci_in_elements", withCsIn);
+        out.put("cs_loci", csLoci);
+        out.put("cache_key", cacheKey);
+        byte[] json = MiniJson.encode(out).getBytes("UTF-8");
+        try { Files.write(cache.toPath(), json); } catch (IOException ignored) {}
+        respond(ex, 200, "application/json", json);
+    }
+
+    // GET /api/sce2g/info — whether the scE2G links are installed, their citation and the cell-type selections
+    private void sce2gInfoEndpoint(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        Map<String, Object> m = sce2gInfo("all");
+        List<Object> ctl = new ArrayList<>();
+        for (Sce2gLinks.CellType c : Sce2gLinks.cellTypes()) {
+            Map<String, Object> e = new LinkedHashMap<>();
+            e.put("id", c.id); e.put("label", c.label); e.put("group", c.group); e.put("lineage", c.lineage); e.put("pairs", c.pairs);
+            ctl.add(e);
+        }
+        m.put("cell_types", ctl);
+        respond(ex, 200, "application/json", MiniJson.encode(m).getBytes("UTF-8"));
+    }
+
     private void projectRouter(HttpExchange ex) throws IOException {
         cors(ex); if (preflight(ex)) return;
         String path = ex.getRequestURI().getPath();
@@ -511,6 +801,7 @@ public class LocalServer {
         }
 
         if (action.equals("manifest")) {
+            warmSce2g(projectId, projectDir);
             serveJson(ex, dataDir + "/manifest.json");
         } else if (action.equals("genome-skyline")) {
             serveJson(ex, dataDir + "/genome_skyline.json");
@@ -527,6 +818,13 @@ public class LocalServer {
             // a digit, so stripping all non-digits from e.g. "locus/2/l2g" corrupts "2" into "22".
             String n = action.replaceFirst("locus/(\\d+)/l2g", "$1");
             projectLocusL2G(ex, dataDir, projectDir, n);
+        } else if (action.matches("locus/\\d+/ld-region")) {
+            projectLocusLdRegion(ex, projectId, projectDir, action.replaceFirst("locus/(\\d+)/ld-region", "$1"));
+        } else if (action.matches("locus/\\d+/sce2g")) {
+            // not replaceAll("\\D+", ""): "sce2g" itself contains a digit (see the l2g route above)
+            projectLocusSce2g(ex, projectId, projectDir, action.replaceFirst("locus/(\\d+)/sce2g", "$1"));
+        } else if (action.equals("sce2g-stats")) {
+            projectSce2gStats(ex, projectId, projectDir);
         } else if (action.matches("locus/\\d+/regulatory")) {
             String n = action.replaceAll("\\D+", "");
             projectLocusRegulatory(ex, dataDir, projectId, n);
@@ -2140,7 +2438,7 @@ public class LocalServer {
         try (PrintWriter pw = new PrintWriter(new OutputStreamWriter(new FileOutputStream(new File(runDir, "provenance.json")), "UTF-8"))) {
             pw.printf(Locale.ROOT, "{%n  \"job_id\": \"%s\",%n  \"tool\": \"heritability_local\",%n  \"tool_version\": \"1.0\",%n"
                 + "  \"timestamp\": %d,%n  \"params\": {\"k_max\": \"%d\", \"sample_n\": \"%d\"}%n}%n",
-                escJ(jobId), System.currentTimeMillis(), kMax, cfg.sampleN);
+                escJ(jobId), System.currentTimeMillis(), kMax, cfg.analysisN());
         }
         res.ok = true;
         res.resultRows = 1;
@@ -2169,7 +2467,14 @@ public class LocalServer {
         pt.update("MAGMA: assigning SNPs to genes", 2, 4);
         long start = Math.max(0, locus.start - windowKb * 1000), end = locus.end + windowKb * 1000;
         MagmaAdapter.AnnotateResult ann = MagmaAdapter.annotate(matchedDir, gff, runDir, locus.chr, start, end, windowKb, magmaBin);
-        if (!ann.ok) throw new IOException(ann.error);
+        if (!ann.ok) {
+            // No gene within the window (a gene desert), or genes but none of the locus SNPs within the window of one:
+            // there is nothing for MAGMA to test. That is a property of the locus, not a failure.
+            File alog = new File(runDir, "magma_annotate.log");
+            boolean noSnpMapped = alog.isFile() && new String(Files.readAllBytes(alog.toPath()), "UTF-8").contains("no SNPs mapped to a gene");
+            if (ann.nGenes == 0 || noSnpMapped) return magmaIntergenic(res, gff, locus, runDir, jobId, windowKb, cfg, ann.nGenes);
+            throw new IOException(ann.error);
+        }
 
         pt.update("MAGMA: gene-based test", 3, 4);
         MagmaAdapter.GeneAnalysisResult ga = MagmaAdapter.geneAnalysis(harmonizedDir, matchedDir, ann, runDir, cfg.analysisN(), magmaBin);
@@ -2203,6 +2508,32 @@ public class LocalServer {
         }
         res.ok = true;
         res.resultRows = nTested;
+        return res;
+    }
+
+    /** Completed MAGMA run for a locus with no gene to test: empty result table, the nearest gene in provenance. */
+    private PluginEngine.RunResult magmaIntergenic(PluginEngine.RunResult res, GffParser gff, Locus locus, File runDir,
+                                                   String jobId, long windowKb, Config cfg, int nGenesNear) throws IOException {
+        String chr = locus.chr.replaceFirst("^chr", "");
+        Gene best = null;
+        long bestD = Long.MAX_VALUE;
+        for (Gene g : gff.genesByChromosome().getOrDefault(chr, Collections.emptyList())) {
+            long d = g.end < locus.start ? locus.start - g.end : g.start > locus.end ? g.start - locus.end : 0;
+            if (d < bestD) { bestD = d; best = g; }
+        }
+        try (PrintWriter pw = new PrintWriter(new OutputStreamWriter(new FileOutputStream(new File(runDir, "result.tsv")), "UTF-8"))) {
+            pw.println("gene_id\tgene\tchr\tstart\tstop\tnsnps\tmagma_z\tmagma_p\tsignificant");
+        }
+        try (PrintWriter pw = new PrintWriter(new OutputStreamWriter(new FileOutputStream(new File(runDir, "provenance.json")), "UTF-8"))) {
+            pw.printf(Locale.ROOT, "{%n  \"job_id\": \"%s\",%n  \"tool\": \"magma_gene\",%n  \"tool_version\": \"1.10\",%n"
+                + "  \"timestamp\": %d,%n  \"params\": {\"window_kb\": \"%d\", \"sample_n\": \"%d\"},%n"
+                + "  \"intergenic\": true,%n  \"genes_near\": %d,%n  \"nearest_gene\": \"%s\",%n  \"nearest_gene_distance_bp\": %d,%n"
+                + "  \"genes_tested\": 0%n}%n",
+                escJ(jobId), System.currentTimeMillis(), windowKb, cfg.sampleN, nGenesNear,
+                escJ(best == null ? "" : best.geneName), best == null ? -1 : bestD);
+        }
+        res.ok = true;
+        res.resultRows = 0;
         return res;
     }
 
@@ -2376,6 +2707,7 @@ public class LocalServer {
         int nSets;                                   // SuSiE/FINEMAP credible sets, COJO independent signals
         String reliability = "";                     // COJO: ok | suspect | likely_artifact
         String note = "";                            // COJO: why it is not reliable
+        boolean intergenic;                          // MAGMA: no gene within the window, nothing to test
         double localH2 = Double.NaN, localH2Se = Double.NaN;   // heritability_local
         final List<String> setLines = new ArrayList<>();   // "CS1: 9 SNPs, lead rs123 (PIP 0.26)" / "rs123 (pJ 1e-12)"
 
@@ -2391,6 +2723,7 @@ public class LocalServer {
             j.append(",\"n_sets\":").append(nSets);
             j.append(",\"reliability\":\"").append(escJ(reliability)).append('"');
             j.append(",\"note\":\"").append(escJ(note)).append('"');
+            if (intergenic) j.append(",\"intergenic\":true");
             if (!Double.isNaN(localH2)) j.append(String.format(Locale.ROOT, ",\"h2_local\":%.6g,\"h2_local_se\":%s", localH2,
                 Double.isNaN(localH2Se) ? "null" : String.format(Locale.ROOT, "%.6g", localH2Se)));
             j.append(",\"sets\":[");
@@ -2414,6 +2747,14 @@ public class LocalServer {
                 RunSummary prev = latest.get(tool);
                 if (prev != null && prev.timestamp >= ts) continue;
                 RunSummary rs = summarise(tool, d.getName(), ts, res);
+                if (rs != null && Boolean.TRUE.equals(p.get("intergenic"))) {
+                    rs.intergenic = true;
+                    String ng = MiniJson.getStr(p, "nearest_gene", "");
+                    long dist = p.get("nearest_gene_distance_bp") instanceof Number ? ((Number) p.get("nearest_gene_distance_bp")).longValue() : -1;
+                    Object w = p.get("params") instanceof Map ? ((Map<?, ?>) p.get("params")).get("window_kb") : null;
+                    rs.note = "intergenic: no gene within " + (w != null ? w : "10") + " kb, nothing to test"
+                        + (ng.isEmpty() ? "" : String.format(Locale.ROOT, "; nearest gene %s (%.1f kb away)", ng, dist / 1000.0));
+                }
                 if (rs != null) latest.put(tool, rs);
             } catch (Exception ignored) {}
         }
@@ -3049,22 +3390,6 @@ public class LocalServer {
         }
     }
 
-
-
-
-    // ── GitHub project save/extract (Phase 6) ───────────────────────────────
-
-
-
-
-
-
-
-
-
-
-
-
     // POST /api/rsid-recover — { "project_id": "...", "snp_database_id": "..." }
     private void rsidRecover(HttpExchange ex) throws IOException {
         cors(ex); if (preflight(ex)) return;
@@ -3572,7 +3897,7 @@ public class LocalServer {
                     mergedFile.getAbsolutePath(), "chrom", "pos", "p", "", params, progress.identifyProgress);
                 progress.lociFound = loci.size();
 
-                GffParser gff = GffParser.parse(configs.get(0));
+                GffParser gff = sharedGff(configs.get(0));
 
                 MultiLocusResult result = MultiLocusScanner.scan(configs, finalProjectIds, loci, gff, progress);
                 result.name = finalJobName;
@@ -3882,6 +4207,27 @@ public class LocalServer {
             Thread t = new Thread(task, "gff-load"); t.setDaemon(true); t.start();
             return task;
         });
+    }
+
+    /** The project's gene annotation, read once per file and shared by every project that uses it (read-only). */
+    private GffParser sharedGff(Config cfg) throws Exception {
+        if (cfg.gff3File != null && new File(cfg.gff3File).isFile())
+            return gffFuture(new File(cfg.gff3File).getAbsolutePath()).get();
+        return GffParser.parse(cfg);
+    }
+
+    /** At startup: start reading the gene annotation of the projects in the background, before anyone opens one. */
+    private void warmProjectsGeneAnnotation() {
+        File[] dirs = new File("projects").listFiles(File::isDirectory);
+        if (dirs == null) return;
+        Set<String> seen = new HashSet<>();
+        for (File d : dirs) {
+            try {
+                Config c = Config.loadFromProject(d.getAbsolutePath());
+                if (c.gff3File != null && new File(c.gff3File).isFile() && seen.add(new File(c.gff3File).getAbsolutePath()))
+                    gffFuture(new File(c.gff3File).getAbsolutePath());
+            } catch (Exception ignored) {}
+        }
     }
 
     private void warmGeneAnnotation(String jobId) {
@@ -4723,7 +5069,7 @@ public class LocalServer {
             List<Object> ds = new ArrayList<>();
             for (Cand c : chosen) {
                 Map<String, Object> d = new LinkedHashMap<>();
-                d.put("id", c.pid); d.put("disease", c.disease); d.put("N", c.cfg.sampleN); d.put("p", c.p);
+                d.put("id", c.pid); d.put("disease", c.disease); d.put("N", c.cfg.analysisN()); d.put("p", c.p);
                 Map<String, Object> gw = new LinkedHashMap<>();
                 gw.put("file", c.cfg.gwasFile.replace("\\", "/")); gw.put("chr", c.cfg.colChr); gw.put("pos", c.cfg.colPos);
                 gw.put("ea", c.cfg.colEa); gw.put("nea", c.cfg.colNea); gw.put("se", c.cfg.colSe);
@@ -5217,7 +5563,7 @@ public class LocalServer {
             SusiexAdapter.Member m = new SusiexAdapter.Member();
             ProjectMetadata pm = ProjectMetadata.load(dir.getAbsolutePath());
             m.label = (pm != null && !pm.name.isEmpty()) ? pm.name : pid;
-            m.sampleN = ps.config.sampleN;
+            m.sampleN = ps.config.analysisN();
             File analysisRoot = BaseStepPipeline.analysisDir(ps.config, locus);
             m.harmonizedDir = new File(analysisRoot, "harmonized");
             m.matchedDir = new File(analysisRoot, "matched");
@@ -5404,7 +5750,9 @@ public class LocalServer {
         if (f == null || !f.isFile()) { SecurityGate.deny(ex, 404, "Not found"); return; }
         byte[] bytes = Files.readAllBytes(f.toPath());
         ex.getResponseHeaders().set("Content-Type", guessMime(p));
-        if (mapped == null) ex.getResponseHeaders().set("Cache-Control", "public, max-age=86400");
+        // pages are re-checked so an update shows at once; other static files keep a day of cache
+        if (p.endsWith(".html") || p.equals("/")) ex.getResponseHeaders().set("Cache-Control", "no-cache");
+        else if (mapped == null) ex.getResponseHeaders().set("Cache-Control", "public, max-age=86400");
         ex.sendResponseHeaders(200, bytes.length);
         try (OutputStream os = ex.getResponseBody()) { os.write(bytes); }
     }
