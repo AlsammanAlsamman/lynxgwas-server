@@ -4940,6 +4940,10 @@ public class LocalServer {
         if (result == null) { respond(ex, 404, "application/json", "{\"error\":\"Cross-dataset run not found\"}".getBytes()); return; }
         MultiLocusResult.LocusRow row = locusRow(result, extractStr(body, "locus"));
         if (row == null) { respond(ex, 404, "application/json", "{\"error\":\"Locus not found\"}".getBytes()); return; }
+        if (row.mhc) {
+            respond(ex, 400, "application/json", ("{\"error\":\"This locus overlaps the MHC window (" + MhcRegion.label(result.genomeBuild)
+                + "); its LD is too complex for joint fine-mapping\"}").getBytes()); return;
+        }
         if (mvsusieBatches.containsKey(jobRef) && !mvsusieBatches.get(jobRef).finished) {
             respond(ex, 409, "application/json", "{\"error\":\"A joint fine-mapping batch is running on this run; wait for it or cancel it\"}".getBytes()); return;
         }
@@ -5329,6 +5333,7 @@ public class LocalServer {
         // Units of work
         List<Object[]> units = new ArrayList<>();   // {row, disease}
         for (MultiLocusResult.LocusRow row : result.loci) {
+            if (row.mhc) continue; // MHC window: no joint fine-mapping
             Map<String, List<String>> byDis = significantByDisease(result, row);
             if (mode.equals("within")) {
                 for (Map.Entry<String, List<String>> e : byDis.entrySet())
@@ -5417,10 +5422,14 @@ public class LocalServer {
         boolean tsv = "tsv".equals(queryParam(ex, "format"));
         if (!mvsusieCanSeeRun(ex, job)) { respond(ex, 404, "application/json", "{\"error\":\"Cross-dataset run not found\"}".getBytes()); return; }
         ensureMvsusieIndex();
+        // MHC loci are left out: runs saved there before the window covered them are not reported
+        Set<Integer> mhcLoci = new HashSet<>();
+        MultiLocusResult run = locusMatrixJobs.get(job);
+        if (run != null) for (MultiLocusResult.LocusRow r : run.loci) if (r.mhc) mhcLoci.add(r.index);
         // Latest visible run per (locus, mode, disease)
         Map<String, MvsusieSaved> latest = new TreeMap<>();
         for (MvsusieSaved s : mvsusieSaved.values()) {
-            if (!s.job.equals(job) || !mvsusieVisible(ex, s)) continue;
+            if (!s.job.equals(job) || !mvsusieVisible(ex, s) || mhcLoci.contains(s.locus)) continue;
             String k = String.format(Locale.ROOT, "%08d|%s|%s", s.locus, s.mode, s.disease);
             MvsusieSaved cur = latest.get(k);
             if (cur == null || s.created > cur.created) latest.put(k, s);
