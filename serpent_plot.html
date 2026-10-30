@@ -303,6 +303,21 @@ function prepare(){
   }).filter(function(L){ return L.g >= 0; });
   var hdr = document.getElementById('hdr-meta');
   hdr.innerHTML = '<b>' + DS.length + '</b> datasets · <b>' + DISEASES.length + '</b> diseases · <b>' + LOCI.length + '</b> loci' + (D.ref_panel_label ? ' · ' + esc(D.ref_panel_label) : '') + (D.name ? ' · ' + esc(D.name) : '');
+  // datasets whose effects point the other way from the rest of their disease: likely swapped allele columns
+  var splits = (D.direction_check && D.direction_check.splits) || [];
+  if (splits.length){
+    var nameOf = {}; DS.forEach(function(d){ nameOf[d.id] = d.name; });
+    var names = function(ids){ return ids.map(function(i){ return esc(nameOf[i] || i); }).join(', '); };
+    var w = document.createElement('div'); w.className = 'note'; w.style.cssText = 'color:var(--ink);border-left:3px solid #d97706;padding:.35rem .6rem;margin:.3rem 0';
+    w.innerHTML = splits.map(function(s){
+      var small = s.group_a.length < s.group_b.length ? s.group_a : s.group_b, big = small === s.group_a ? s.group_b : s.group_a;
+      var head = s.ambiguous
+        ? '<b>' + esc(pretty(s.disease)) + ': effects point opposite ways between ' + names(s.group_a) + ' and ' + names(s.group_b) + '.</b> One group has its effect and other allele columns swapped; check a well-known variant to see which.'
+        : '<b>Check the effect alleles of ' + names(small) + '.</b> Their effects point the opposite way from ' + names(big) + ' (' + esc(pretty(s.disease)) + '); their effect and other allele columns are probably swapped in the project settings.';
+      return head + ' Flipping one group makes ' + s.agree_after + ' of ' + s.comparisons + ' shared lead SNPs agree, against ' + s.agree_before + ' now.';
+    }).join('<br>') + ' Fine-mapping of each dataset is unaffected, but effect directions, joint fine-mapping and the ranking are.';
+    hdr.parentNode.insertBefore(w, hdr.nextSibling);
+  }
   document.getElementById('disLegend').innerHTML = DISEASES.map(function(k){ return '<span class="sw"><span class="chip" style="background:' + disColor(k) + '"></span>' + esc(pretty(k)) + '</span>'; }).join('');
   // controls
   var os = document.getElementById('orderSel');

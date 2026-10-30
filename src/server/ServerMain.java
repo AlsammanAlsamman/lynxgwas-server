@@ -13,6 +13,8 @@ public class ServerMain {
 
     public static void main(String[] args) throws Exception {
         System.out.println("=== LYNXgwas Server ===");
+        if (netguard.OfflineMode.on())   // LYNXGWAS_OFFLINE=1 or -Dlynxgwas.offline=true; e-mail (SMTP) is still sent
+            System.out.println("Offline mode: no online lookups (rsIDs, GWAS Catalog, Open Targets).");
         ServerConfig cfg = ServerConfig.load();
         warnAboutRiskySettings(cfg);
 

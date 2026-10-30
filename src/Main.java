@@ -21,7 +21,10 @@ public class Main {
         for (String arg : args) {
             if (arg.startsWith("--project=")) forceProjectId = arg.substring("--project=".length());
             else if (arg.equals("--all"))     forceAll = true;
+            else if (arg.equals("--offline")) netguard.OfflineMode.enable();
         }
+        if (netguard.OfflineMode.on())
+            System.out.println("Offline mode: no request will leave this computer (online lookups and cloud AI models are off).");
 
         // Migrate legacy single-project layout if needed (Step 11)
         migrateLegacyIfNeeded();

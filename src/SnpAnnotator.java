@@ -58,8 +58,9 @@ public class SnpAnnotator {
     }
 
     private static String httpGet(String url) throws Exception {
+        netguard.OfflineMode.check(url);   // strict offline mode: nothing leaves the computer
         HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
-        conn.setRequestProperty("User-Agent", "LociCatalogue/1.0 (sammanmahmoud@gmail.com)");
+        conn.setRequestProperty("User-Agent", "LYNXgwas (https://github.com/AlsammanAlsamman/LYNXgwas)");
         conn.setConnectTimeout(10_000);
         conn.setReadTimeout(15_000);
         try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {

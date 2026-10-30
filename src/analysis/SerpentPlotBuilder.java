@@ -103,6 +103,7 @@ public class SerpentPlotBuilder {
     public static class Result {
         public String name = "", refPanelLabel = "", createdAt = "", mhcWindow = "";
         public int nMhcLoci = 0;
+        public String directionCheckJson = "null"; // DirectionCheck over the run: datasets whose effects look reversed
         public List<Dataset> datasets = new ArrayList<>();
         public List<Locus> loci = new ArrayList<>();
         public List<String> categoryNames = new ArrayList<>();
@@ -123,6 +124,7 @@ public class SerpentPlotBuilder {
         Result r = new Result();
         r.name = mlr.name; r.refPanelLabel = mlr.refPanelLabel; r.createdAt = mlr.createdAt;
         r.mhcWindow = MhcRegion.label(mlr.genomeBuild);
+        r.directionCheckJson = DirectionCheck.toJson(DirectionCheck.run(mlr));
         int n = mlr.datasets.size();
 
         for (MultiLocusResult.DatasetInfo d : mlr.datasets) {
@@ -621,6 +623,7 @@ public class SerpentPlotBuilder {
         kv(j, "created_at", r.createdAt).append(",");
         kv(j, "mhc_window", r.mhcWindow).append(",");
         j.append("\"n_mhc_loci\":").append(r.nMhcLoci).append(",");
+        j.append("\"direction_check\":").append(r.directionCheckJson).append(",");
         j.append("\"categories\":[");
         for (int i = 0; i < r.categoryNames.size(); i++) { if (i > 0) j.append(","); str(j, r.categoryNames.get(i)); }
         j.append("],\"datasets\":[");

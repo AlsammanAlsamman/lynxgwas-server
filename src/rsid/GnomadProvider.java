@@ -100,6 +100,7 @@ public class GnomadProvider implements RsidApiProvider {
     }
 
     private String httpPost(String url, String body) throws IOException {
+        netguard.OfflineMode.check(url);   // strict offline mode: nothing leaves the computer
         HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
         conn.setRequestMethod("POST");
         conn.setDoOutput(true);

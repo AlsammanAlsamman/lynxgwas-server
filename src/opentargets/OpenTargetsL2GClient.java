@@ -170,6 +170,7 @@ public class OpenTargetsL2GClient {
 
     private String post(String jsonBody) throws IOException, InterruptedException {
         LIMITER.acquire();
+        netguard.OfflineMode.check(GRAPHQL_URL);   // strict offline mode: nothing leaves the computer
         HttpRequest req = HttpRequest.newBuilder(URI.create(GRAPHQL_URL))
             .header("Content-Type", "application/json")
             .timeout(Duration.ofSeconds(15))

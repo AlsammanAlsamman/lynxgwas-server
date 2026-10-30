@@ -130,6 +130,7 @@ public class NcbiDbSnpProvider implements RsidApiProvider {
     }
 
     private String httpGet(String url) throws IOException {
+        netguard.OfflineMode.check(url);   // strict offline mode: nothing leaves the computer
         HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
         conn.setRequestMethod("GET");
         conn.setConnectTimeout(timeoutMs);

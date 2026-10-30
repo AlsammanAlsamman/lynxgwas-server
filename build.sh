@@ -11,6 +11,7 @@ for f in lib/*.jar; do
 done
 
 javac -encoding UTF-8 -d bin -cp "bin$LIBCP" \
+  src/netguard/OfflineMode.java \
   src/rsid/DbSnpRecord.java \
   src/rsid/MatchResult.java \
   src/rsid/RsidMatcher.java \
@@ -38,6 +39,7 @@ javac -encoding UTF-8 -d bin -cp "bin$LIBCP" \
   src/analysis/GeneConstellationResult.java \
   src/analysis/GeneConstellationBuilder.java \
   src/analysis/RegionConstellationBuilder.java \
+  src/analysis/DirectionCheck.java \
   src/analysis/SerpentPlotBuilder.java \
   src/analysis/GlobalSearchIndex.java \
   src/analysis/StepManifest.java \

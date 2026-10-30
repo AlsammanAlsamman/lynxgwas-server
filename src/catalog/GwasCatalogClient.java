@@ -99,6 +99,7 @@ public class GwasCatalogClient {
 
     private String get(String url) throws IOException, InterruptedException {
         LIMITER.acquire();
+        netguard.OfflineMode.check(url);   // strict offline mode: nothing leaves the computer
         HttpRequest req = HttpRequest.newBuilder(URI.create(url))
             .header("Accept", "application/json")
             .timeout(Duration.ofSeconds(15))
