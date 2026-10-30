@@ -41,6 +41,10 @@ public final class GenomeHeritability {
         progress.update("Reading LD scores", 0);
         Map<Long, Integer> idx = new HashMap<>(1 << 21);
         List<double[]> ref = new ArrayList<>(1_200_000);    // {key, l2}
+        // LYNXGWAS_LDSC_EXPORT=1 also writes the regression input (SNP, N, Z) next to ldsc.json, so the reference
+        // ldsc can be run on exactly the same SNPs, chi-squares and sample sizes
+        boolean export = "1".equals(System.getenv("LYNXGWAS_LDSC_EXPORT"));
+        List<String> rsids = export ? new ArrayList<>(1_200_000) : null;
         double m = 0;
         for (int c = 1; c <= 22; c++) {
             m += Double.parseDouble(new String(Files.readAllBytes(new File(ldDir, c + ".l2.M_5_50").toPath())).trim());
@@ -48,13 +52,14 @@ public final class GenomeHeritability {
                     new GZIPInputStream(new FileInputStream(new File(ldDir, c + ".l2.ldscore.gz"))), "UTF-8"))) {
                 String line = br.readLine();
                 List<String> h = Arrays.asList(line.split("\t"));
-                int iBp = h.indexOf("BP"), iL2 = h.indexOf("L2");
+                int iBp = h.indexOf("BP"), iL2 = h.indexOf("L2"), iSnp = h.indexOf("SNP");
                 while ((line = br.readLine()) != null) {
                     String[] f = line.split("\t");
                     long key = c * 10_000_000_000L + Long.parseLong(f[iBp]);
                     if (idx.containsKey(key)) continue;
                     idx.put(key, ref.size());
                     ref.add(new double[]{key, Double.parseDouble(f[iL2])});
+                    if (export) rsids.add(f[iSnp]);
                 }
             }
         }
@@ -164,6 +169,18 @@ public final class GenomeHeritability {
             if (Double.isNaN(chi2[i])) continue;
             y[j2] = chi2[i]; l[j2] = ref.get(i)[1]; w[j2] = ref.get(i)[1]; n[j2] = nArr[i];
             j2++;
+        }
+        if (export) {
+            File in = new File(resultFile(cfg).getParentFile(), "ldsc_input.sumstats.gz");
+            in.getParentFile().mkdirs();
+            try (PrintWriter pw = new PrintWriter(new OutputStreamWriter(new java.util.zip.GZIPOutputStream(new FileOutputStream(in)), "UTF-8"))) {
+                pw.println("SNP\tN\tZ");
+                for (int i = 0, q = 0; i < ref.size(); i++) {
+                    if (Double.isNaN(chi2[i])) continue;
+                    pw.println(rsids.get(i) + "\t" + n[q] + "\t" + Math.sqrt(chi2[i]));
+                    q++;
+                }
+            }
         }
         LdscRegression.Result r = LdscRegression.fit(y, l, w, n, m, LdscRegression.DEFAULT_BLOCKS);
         if (caseControl) LdscRegression.toLiability(r, cfg.prevalence, samplePrev);
