@@ -41,6 +41,7 @@ public class RegionConstellationBuilder {
         List<GeneConstellationResult.RegionEntry> out = new ArrayList<>();
 
         for (MultiLocusResult.LocusRow row : mlr.loci) {
+            if (row.mhc) continue; // MHC window: left out, as in the gene view
             GeneConstellationResult.RegionEntry re = new GeneConstellationResult.RegionEntry();
             re.regionId = row.chr + ":" + row.start + "-" + row.end;
             re.chr = row.chr;

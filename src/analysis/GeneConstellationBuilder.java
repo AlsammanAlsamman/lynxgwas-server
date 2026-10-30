@@ -54,8 +54,12 @@ public class GeneConstellationBuilder {
         LinkedHashMap<String, GeneAgg> genes = new LinkedHashMap<>();
         int unassigned = 0;
 
+        out.mhcWindow = MhcRegion.label(mlr.genomeBuild);
         for (MultiLocusResult.LocusRow row : mlr.loci) {
             String gene = row.nearestGene == null ? "" : row.nearestGene.trim();
+            // MHC loci: their long-range LD links genes across unrelated diseases, so they get no node,
+            // edge or ANOVA; they are listed by name instead
+            if (row.mhc) { out.mhcLociCount++; if (!gene.isEmpty()) out.mhcGenes.add(gene); continue; }
             if (gene.isEmpty()) { unassigned++; continue; }
 
             GeneAgg agg = genes.computeIfAbsent(gene, g -> new GeneAgg(g));

@@ -9,6 +9,9 @@ public class GeneConstellationResult {
     public String createdAt     = "";
     public double threshold     = GeneConstellationBuilder.DEFAULT_THRESHOLD;
     public int unassignedLociCount = 0;
+    public int mhcLociCount = 0;          // aligned loci in the MHC window, left out of nodes, edges and tests
+    public Set<String> mhcGenes = new TreeSet<>();
+    public String mhcWindow = "";
     public List<MultiLocusResult.DatasetInfo> datasets = new ArrayList<>();
     public List<GeneEntry> genes = new ArrayList<>();
     public List<GeneEdge> edges = new ArrayList<>();
@@ -80,6 +83,11 @@ public class GeneConstellationResult {
         kv(j, "created_at", createdAt); j.append(",");
         j.append("\"threshold\":").append(num(threshold)).append(",");
         j.append("\"unassigned_loci_count\":").append(unassignedLociCount).append(",");
+        j.append("\"mhc_loci_count\":").append(mhcLociCount).append(",");
+        kv(j, "mhc_window", mhcWindow); j.append(",");
+        j.append("\"mhc_genes\":[");
+        { int k = 0; for (String g : mhcGenes) { if (k++ > 0) j.append(","); j.append("\"").append(esc(g)).append("\""); } }
+        j.append("],");
 
         j.append("\"datasets\":[");
         for (int i = 0; i < datasets.size(); i++) {

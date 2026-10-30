@@ -31,6 +31,7 @@ javac -encoding UTF-8 -d bin -cp "bin$LIBCP" \
   tests/GeneConstellationBuilderTest.java \
   tests/RegionConstellationBuilderTest.java \
   tests/SerpentPlotBuilderTest.java \
+  tests/MhcRegionTest.java \
   tests/ToolLocatorTest.java \
   tests/PlinkRunnerTest.java \
   tests/LdscRegressionTest.java \
@@ -144,6 +145,9 @@ java -cp "bin$LIBCP" ServerHttpTest || FAILED=1
 echo
 echo "--- SerpentPlotBuilderTest ---"
 java -cp "bin$LIBCP" SerpentPlotBuilderTest || FAILED=1
+
+echo "--- MhcRegionTest ---"
+java -cp "bin$LIBCP" MhcRegionTest || FAILED=1
 
 echo
 echo "--- GlobalSearchIndexTest ---"

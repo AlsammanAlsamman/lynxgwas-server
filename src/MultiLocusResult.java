@@ -6,6 +6,7 @@ public class MultiLocusResult {
     public String refPanelId    = "";
     public String refPanelLabel = "";
     public String createdAt     = "";
+    public String genomeBuild   = "GRCh37"; // build of the aligned loci (GRCh38 only when every dataset is)
     public List<DatasetInfo> datasets = new ArrayList<>();
     public List<LocusRow> loci        = new ArrayList<>();
 
@@ -52,7 +53,20 @@ public class MultiLocusResult {
         public String overallBestDatasetId = "";
         public String overallBestSnpId     = "";
         public double overallBestP         = Double.NaN;
+        public boolean mhc                 = false; // overlaps the MHC window: shown, but left out of cross-dataset statistics
         public Map<String, DatasetLocusStat> cells = new LinkedHashMap<>();
+    }
+
+    /** Sets every row's MHC flag from its position; called after building and after reading a saved run. */
+    public void markMhc() {
+        for (LocusRow l : loci) l.mhc = MhcRegion.overlaps(l.chr, l.start, l.end, genomeBuild);
+    }
+
+    /** Rows outside the MHC window: the loci every cross-dataset statistic is computed on. */
+    public List<LocusRow> lociOutsideMhc() {
+        List<LocusRow> out = new ArrayList<>();
+        for (LocusRow l : loci) if (!l.mhc) out.add(l);
+        return out;
     }
 
     public String toJson() {
@@ -62,6 +76,8 @@ public class MultiLocusResult {
         kv(j, "ref_panel_id", refPanelId); j.append(",");
         kv(j, "ref_panel_label", refPanelLabel); j.append(",");
         kv(j, "created_at", createdAt); j.append(",");
+        kv(j, "genome_build", genomeBuild); j.append(",");
+        kv(j, "mhc_window", MhcRegion.label(genomeBuild)); j.append(",");
 
         j.append("\"datasets\":[");
         for (int i = 0; i < datasets.size(); i++) {
@@ -113,6 +129,7 @@ public class MultiLocusResult {
         kv(j, "overall_best_dataset_id", l.overallBestDatasetId); j.append(",");
         kv(j, "overall_best_snp_id", l.overallBestSnpId); j.append(",");
         j.append("\"overall_best_p\":").append(num(l.overallBestP)).append(",");
+        j.append("\"mhc\":").append(l.mhc).append(",");
         j.append("\"cells\":{");
         int i = 0;
         for (Map.Entry<String, DatasetLocusStat> e : l.cells.entrySet()) {
@@ -186,6 +203,8 @@ public class MultiLocusResult {
         r.refPanelId    = str(o, "ref_panel_id");
         r.refPanelLabel = str(o, "ref_panel_label");
         r.createdAt     = str(o, "created_at");
+        String gb = str(o, "genome_build");
+        if (!gb.isEmpty()) r.genomeBuild = gb; // runs saved before this field are GRCh37
         for (Object dv : list(o, "datasets")) {
             Map<String, Object> d = MiniJson.asObject(dv);
             DatasetInfo di = new DatasetInfo(str(d, "id"), str(d, "name"), str(d, "effect_type"));
@@ -230,6 +249,7 @@ public class MultiLocusResult {
             }
             r.loci.add(row);
         }
+        r.markMhc(); // recomputed, not read back, so a saved run always follows the current window
         return r;
     }
 

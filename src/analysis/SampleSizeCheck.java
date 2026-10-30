@@ -106,7 +106,7 @@ public final class SampleSizeCheck {
                 int c;
                 long pos;
                 try { c = Integer.parseInt(cs); pos = Long.parseLong(f[iPos].trim()); } catch (NumberFormatException e) { continue; }
-                if (c < 1 || c > 22 || (c == 6 && pos > 25_000_000 && pos < 34_000_000)) continue;   // MHC out
+                if (c < 1 || c > 22 || MhcRegion.contains(String.valueOf(c), pos, cfg.genomeBuild)) continue;   // MHC out
                 double p = iF >= 0 ? parse(f, iF) : Double.NaN;
                 if (!(p > 0 && p < 1)) p = refMaf.getOrDefault(c * 10_000_000_000L + pos, Double.NaN);   // empty column: reference
                 if (Double.isNaN(p)) continue;

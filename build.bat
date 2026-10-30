@@ -27,6 +27,7 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   src\opentargets\OpenTargetsL2GClient.java ^
   src\loci\LociIdentifier.java ^
   src\loci\LociProgress.java ^
+  src\analysis\MhcRegion.java ^
   src\analysis\ContentHasher.java ^
   src\analysis\StatsUtil.java ^
   src\analysis\AnovaUtil.java ^

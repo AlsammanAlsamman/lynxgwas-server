@@ -687,7 +687,8 @@ public class LocalServer {
         String sel = sce2gSelection(ex, projectId, ps.config);
         List<Sce2gLinks.CellType> cts = Sce2gLinks.select(sel);
         boolean b38 = isGrch38(ps.config);
-        StringBuilder key = new StringBuilder("v1|" + sel + "|" + (b38 ? 38 : 37));
+        // the MHC window is part of the key: lead SNPs inside it are left out, so a new window means new stats
+        StringBuilder key = new StringBuilder("v1|" + sel + "|" + (b38 ? 38 : 37) + "|" + MhcRegion.label(ps.config.genomeBuild));
         for (Sce2gLinks.CellType c : cts) key.append('|').append(c.id).append(':').append(c.pairs);
         List<Sce2gLinks.Snp> snps = new ArrayList<>();
         Map<Integer, Locus> lociByIndex = new HashMap<>();

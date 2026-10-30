@@ -137,6 +137,10 @@ public class MultiLocusScanner {
             progress.lociFound = result.loci.size();
         }
 
+        boolean allGrch38 = !configs.isEmpty();
+        for (Config c : configs) allGrch38 &= "GRCh38".equalsIgnoreCase(c.genomeBuild);
+        result.genomeBuild = allGrch38 ? "GRCh38" : "GRCh37";
+        result.markMhc();
         return result;
     }
 

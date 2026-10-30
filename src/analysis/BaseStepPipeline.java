@@ -50,17 +50,9 @@ public class BaseStepPipeline {
     // assumptions behind fine-mapping/colocalization (SuSiE, FINEMAP, COJO, coloc, SuSiEx) — results
     // there aren't trustworthy without special handling, and its LD density can also OOM naive
     // LD-matrix computation. We don't block analysis (a user may deliberately want to look here),
-    // just surface a clear warning wherever this locus is analyzed.
-    private static final long MHC_GRCH37_START = 28_477_897L, MHC_GRCH37_END = 33_448_354L;
-    private static final long MHC_GRCH38_START = 28_510_120L, MHC_GRCH38_END = 33_480_577L;
-
+    // just surface a clear warning wherever this locus is analyzed. The window is MhcRegion's.
     public static boolean overlapsMhc(Locus locus, String genomeBuild) {
-        String chr = locus.chr.replaceFirst("^chr", "");
-        if (!chr.equals("6")) return false;
-        boolean grch38 = "GRCh38".equalsIgnoreCase(genomeBuild);
-        long mhcStart = grch38 ? MHC_GRCH38_START : MHC_GRCH37_START;
-        long mhcEnd   = grch38 ? MHC_GRCH38_END   : MHC_GRCH37_END;
-        return locus.start <= mhcEnd && locus.end >= mhcStart;
+        return MhcRegion.overlaps(locus.chr, locus.start, locus.end, genomeBuild);
     }
 
     /**

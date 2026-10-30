@@ -369,6 +369,9 @@ function render(data, mode) {
   document.getElementById('hdr-meta').innerHTML =
     '<b>' + nDatasets + '</b> datasets &nbsp;·&nbsp; <b>' + genes.length + '</b> ' + nodeWord + ' plotted' +
     (mode === 'gene' && data.unassigned_loci_count ? ' &nbsp;·&nbsp; <b>' + data.unassigned_loci_count + '</b> loci with no nearest gene (excluded)' : '') +
+    (data.mhc_loci_count ? ' &nbsp;·&nbsp; <b>' + data.mhc_loci_count + '</b> MHC loci excluded' +
+      '<span title="' + esc('Loci in the MHC window (' + data.mhc_window + '): their long-range LD links genes across unrelated diseases, so they get no node, link or test. Genes: ' + (data.mhc_genes || []).join(', ')) + '" style="cursor:help;border-bottom:1px dotted currentColor">' +
+      ' (' + esc((data.mhc_genes || []).slice(0, 4).join(', ') + ((data.mhc_genes || []).length > 4 ? ', …' : '')) + ')</span>' : '') +
     ' &nbsp;·&nbsp; threshold p&le;' + data.threshold +
     (normalized.edges.length ? ' &nbsp;·&nbsp; <b>' + normalized.edges.length + '</b> co-significance links' : '');
 

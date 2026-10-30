@@ -423,8 +423,9 @@ function draw(){
   // serpent still starts at its true genomic position on the chromosome bar and bends into its lane.
   var separated = layoutLanes(visible, X, OFFPX, order, LEFT, W - RIGHT);
   var lnote = document.getElementById('laneNote');
-  if (lnote) lnote.textContent = separated ? 'Nearby serpents are moved apart just enough not to cross; each starts at its true position on the chromosome bar.'
-                                           : 'Nearby loci can overlap at this zoom: pick a chromosome to separate them.';
+  if (lnote) lnote.textContent = (separated ? 'Nearby serpents are moved apart just enough not to cross; each starts at its true position on the chromosome bar.'
+                                           : 'Nearby loci can overlap at this zoom: pick a chromosome to separate them.')
+    + (D.n_mhc_loci ? ' ' + D.n_mhc_loci + ' locus/loci in the MHC window (' + D.mhc_window + ') are drawn in grey and left out of the clustering and category tests.' : '');
   visible.sort(function(a,b){ return b.bestP - a.bestP; }); // weakest first, strongest on top
   var gid = 0;
   visible.forEach(function(L){
@@ -443,8 +444,9 @@ function draw(){
       if (a.t===0 && b.t===0) continue;
       var wa=TIERS[a.t].w, wb=TIERS[b.t].w, ym2=(a.y+b.y)/2, id='sg'+(gid++);
       var lg = el('linearGradient',{id:id,gradientUnits:'userSpaceOnUse',x1:0,y1:a.y,x2:0,y2:b.y},defs);
-      el('stop',{offset:0,'stop-color':tierCol[a.t],'stop-opacity':TIERS[a.t].a},lg);
-      el('stop',{offset:1,'stop-color':tierCol[b.t],'stop-opacity':TIERS[b.t].a},lg);
+      // MHC loci keep their widths but are drawn grey: they are left out of the clustering and tests
+      el('stop',{offset:0,'stop-color':L.mhc ? tierCol[0] : tierCol[a.t],'stop-opacity':TIERS[a.t].a},lg);
+      el('stop',{offset:1,'stop-color':L.mhc ? tierCol[0] : tierCol[b.t],'stop-opacity':TIERS[b.t].a},lg);
       el('path',{d:'M'+(a.x-wa/2)+','+a.y+' C'+(a.x-wa/2)+','+ym2+' '+(b.x-wb/2)+','+ym2+' '+(b.x-wb/2)+','+b.y+
                   ' L'+(b.x+wb/2)+','+b.y+' C'+(b.x+wb/2)+','+ym2+' '+(a.x+wa/2)+','+ym2+' '+(a.x+wa/2)+','+a.y+' Z', fill:'url(#'+id+')'},g);
     }
@@ -470,6 +472,7 @@ function draw(){
       placed.push(L._x0);
       var t = el('text',{x:L._x0,y:bottom+28,transform:'rotate(-45 '+L._x0+' '+(bottom+28)+')','text-anchor':'end',style:'font-size:10.5px;fill:var(--'+(L.nDis>=2?'ink':'ink-soft')+')'},L._g);
       var gi = el('tspan',{'font-style': L.gene ? 'italic' : 'normal'},t); gi.textContent = geneLabel(L.gene) || ('chr'+L.chr+':'+(L.ref_pos/1e6).toFixed(1)+'Mb');
+      if (L.mhc){ var mt = el('tspan',{'font-style':'normal',style:'fill:var(--ink-faint)'},t); mt.textContent = ' (MHC, excluded)'; }
       if (L.nDis>=2){ var nn = el('tspan',{style:'font-size:9px;fill:var(--ink-faint)'},t); nn.textContent = ' ×'+L.nDis; }
     });
   }
@@ -546,7 +549,8 @@ function showTip(ev, L, i){
     + esc(ds.name) + '<br><span class="m">' + esc(pretty(ds.disease)) + (ds.ancestry ? ' · ' + esc(ds.ancestry) : '') + (ds.sample_n ? ' · N=' + ds.sample_n.toLocaleString() : '') + '</span><br>'
     + 'p = <b>' + fmtP(L.p[i]) + '</b> <span class="m">(' + TIERS[t].label + ')</span><br>'
     + '<span class="m">lead SNP ' + esc(L.snp[i] || '—') + ', ' + (L.off[i]>=0?'+':'') + (L.off[i]/1000).toFixed(0) + ' kb from the strongest dataset\'s lead SNP</span><br>'
-    + '<span class="m">genome-wide significant in ' + L.n_gws + ' dataset(s), ' + L.nDis + ' disease(s)</span>';
+    + '<span class="m">genome-wide significant in ' + L.n_gws + ' dataset(s), ' + L.nDis + ' disease(s)</span>'
+    + (L.mhc ? '<br><span class="m">MHC window: drawn in grey, left out of the clustering and tests</span>' : '');
   tip.style.opacity = 1;
   tip.style.left = Math.min(ev.clientX+14, innerWidth-310) + 'px'; tip.style.top = (ev.clientY+14) + 'px';
 }

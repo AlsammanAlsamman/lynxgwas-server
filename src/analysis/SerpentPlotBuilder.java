@@ -68,6 +68,7 @@ public class SerpentPlotBuilder {
         public String chr = "", gene = "";
         public long start, end, refPos;
         public int nDatasetsGws = 0;
+        public boolean mhc = false;   // in the MHC window: drawn, but left out of the distances, clustering and tests
         public Cell[] cells;
     }
 
@@ -100,7 +101,8 @@ public class SerpentPlotBuilder {
     }
 
     public static class Result {
-        public String name = "", refPanelLabel = "", createdAt = "";
+        public String name = "", refPanelLabel = "", createdAt = "", mhcWindow = "";
+        public int nMhcLoci = 0;
         public List<Dataset> datasets = new ArrayList<>();
         public List<Locus> loci = new ArrayList<>();
         public List<String> categoryNames = new ArrayList<>();
@@ -120,6 +122,7 @@ public class SerpentPlotBuilder {
     public static Result build(MultiLocusResult mlr, int nPermutations) {
         Result r = new Result();
         r.name = mlr.name; r.refPanelLabel = mlr.refPanelLabel; r.createdAt = mlr.createdAt;
+        r.mhcWindow = MhcRegion.label(mlr.genomeBuild);
         int n = mlr.datasets.size();
 
         for (MultiLocusResult.DatasetInfo d : mlr.datasets) {
@@ -155,6 +158,8 @@ public class SerpentPlotBuilder {
             Locus L = new Locus();
             L.index = row.index; L.chr = row.chr; L.start = row.start; L.end = row.end;
             L.gene = row.nearestGene == null ? "" : row.nearestGene;
+            L.mhc = row.mhc;
+            if (L.mhc) r.nMhcLoci++;
             MultiLocusResult.DatasetLocusStat best = row.cells.get(row.overallBestDatasetId);
             L.refPos = best != null && best.bestPos > 0 ? best.bestPos : (row.start + row.end) / 2;
             L.cells = new Cell[n];
@@ -173,12 +178,16 @@ public class SerpentPlotBuilder {
 
         if (n == 0) return r;
 
+        // every statistic below uses the loci outside the MHC window only
+        List<Locus> statLoci = new ArrayList<>();
+        for (Locus L : r.loci) if (!L.mhc) statLoci.add(L);
+
         // clustering on informative datasets only
-        double[][] dist = tierDistances(r.loci, n);
+        double[][] dist = tierDistances(statLoci, n);
         boolean[] use = new boolean[n];
         List<Integer> mem = new ArrayList<>();
         for (int i = 0; i < n; i++) {
-            int gws = 0; for (Locus L : r.loci) if (L.cells[i].tier == 3) gws++;
+            int gws = 0; for (Locus L : statLoci) if (L.cells[i].tier == 3) gws++;
             use[i] = gws >= MIN_GWS_LOCI;
             if (use[i]) mem.add(i); else r.excluded.add(i);
         }
@@ -206,7 +215,7 @@ public class SerpentPlotBuilder {
         for (String cat : r.categoryNames) {
             String[] labels = new String[n];
             for (int i = 0; i < n; i++) labels[i] = r.datasets.get(i).categories.getOrDefault(cat, "");
-            r.analyses.add(analyzeCategory(cat, labels, use, dist, r.clusterOf, r.loci, nPermutations));
+            r.analyses.add(analyzeCategory(cat, labels, use, dist, r.clusterOf, statLoci, nPermutations));
         }
         return r;
     }
@@ -610,6 +619,8 @@ public class SerpentPlotBuilder {
         kv(j, "name", r.name).append(",");
         kv(j, "ref_panel_label", r.refPanelLabel).append(",");
         kv(j, "created_at", r.createdAt).append(",");
+        kv(j, "mhc_window", r.mhcWindow).append(",");
+        j.append("\"n_mhc_loci\":").append(r.nMhcLoci).append(",");
         j.append("\"categories\":[");
         for (int i = 0; i < r.categoryNames.size(); i++) { if (i > 0) j.append(","); str(j, r.categoryNames.get(i)); }
         j.append("],\"datasets\":[");
@@ -632,6 +643,7 @@ public class SerpentPlotBuilder {
             j.append("\"start\":").append(L.start).append(",\"end\":").append(L.end).append(",\"ref_pos\":").append(L.refPos).append(",");
             kv(j, "gene", L.gene).append(",");
             j.append("\"n_gws\":").append(L.nDatasetsGws).append(",");
+            j.append("\"mhc\":").append(L.mhc).append(",");
             // compact per-dataset arrays, in dataset order
             j.append("\"tier\":["); for (int k = 0; k < L.cells.length; k++) { if (k > 0) j.append(","); j.append(L.cells[k].tier); }
             j.append("],\"p\":["); for (int k = 0; k < L.cells.length; k++) { if (k > 0) j.append(","); j.append(num(L.cells[k].p)); }
