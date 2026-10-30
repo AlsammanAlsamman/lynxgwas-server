@@ -14,6 +14,7 @@ public class LdscRegressionTest {
         failures += recover(0.25, 1.08, 3);   // confounding: intercept above 1
         failures += testLiabilityConversion();
         failures += testInverseNormal();
+        failures += testNoChi2Cap();
         if (failures > 0) { System.out.println("FAIL: " + failures + " test(s) failed"); System.exit(1); }
         System.out.println("PASS: all LdscRegression tests passed");
     }
@@ -44,6 +45,23 @@ public class LdscRegressionTest {
                 Math.abs(r.ratio - trueRatio) < 4 * r.ratioSe && r.ratio > 2 * r.ratioSe);
         }
         return f;
+    }
+
+    /** Like the reference ldsc's two-step estimator, very large chi2 values (an APOE-like locus) are kept, not capped. */
+    private static int testNoChi2Cap() {
+        Random rnd = new Random(9);
+        int k = 200_000;
+        double m = 1_000_000, n = 100_000;
+        double[] chi2 = new double[k], ld = new double[k], nn = new double[k];
+        for (int i = 0; i < k; i++) {
+            double l = 5 + 95 * -Math.log(1 - rnd.nextDouble());
+            ld[i] = l; nn[i] = n;
+            double z = rnd.nextGaussian();
+            chi2[i] = (1 + n * 0.2 * l / m) * z * z;
+        }
+        for (int i = 0; i < 50; i++) chi2[i * 1000] = 500 + 10 * i;   // far above max(80, 0.001 * N) = 100
+        LdscRegression.Result r = LdscRegression.fit(chi2, ld, ld, nn, m, 200);
+        return check("no chi2 cap: all " + k + " SNPs used (" + r.nSnps + ")", r.nSnps == k);
     }
 
     private static int testLiabilityConversion() {

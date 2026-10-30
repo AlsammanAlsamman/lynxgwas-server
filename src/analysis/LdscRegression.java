@@ -7,13 +7,13 @@ import java.util.*;
  * LD scores were computed over and a the intercept (1 + N*a' under confounding/stratification).
  *
  * Follows the reference ldsc implementation's default (two-step) estimator:
- *   - SNPs with chi2 > max(80, 0.001 * max N) are removed;
- *   - regression weights 1 / (2 * (a + N h2 l / M)^2 * max(w_l, 1)), with l clipped at 1, updated by
- *     iteratively reweighted least squares from an aggregate starting value;
- *   - step 1 estimates the intercept on SNPs with chi2 < 30, step 2 fixes it and estimates the slope on
- *     all SNPs;
- *   - standard errors by a block jackknife over contiguous SNP blocks (default 200), with the weights
- *     held fixed, as ldsc does.
+ *   - no chi-square cap (ldsc applies max(80, 0.001 * max N) only with partitioned LD scores);
+ *   - regression weights 1 / (2 * (a + N h2 l / M)^2 * max(w_l, 1)), with l clipped at 1, updated twice by
+ *     iteratively reweighted least squares from the aggregate starting value;
+ *   - step 1 estimates the intercept on SNPs with chi2 < 30; step 2 is its own reweighted fit of the slope on
+ *     all SNPs with that intercept fixed;
+ *   - standard errors by a block jackknife over contiguous SNP blocks (default 200), each step with its final
+ *     weights held fixed, as ldsc does.
  * Liability-scale conversion (Lee et al. 2011) needs the population prevalence K and the sample
  * prevalence P of a case-control study.
  */
@@ -43,13 +43,12 @@ public final class LdscRegression {
     public static Result fit(double[] chi2, double[] ld, double[] wld, double[] n, double m, int nBlocks) {
         int len = chi2.length;
         if (ld.length != len || wld.length != len || n.length != len) throw new IllegalArgumentException("Input arrays differ in length");
-        double maxN = 0;
-        for (double v : n) maxN = Math.max(maxN, v);
-        double chi2Max = Math.max(80, 0.001 * maxN);
+        // No chi2 cap: for the two-step estimator ldsc applies none (its max(80, 0.001 max N) cap is only for
+        // partitioned LD scores); capping removes the strongest loci (APOE, NOD2, ...) and lowers h2.
         int[] keep = new int[len];
         int k = 0;
         for (int i = 0; i < len; i++)
-            if (chi2[i] >= 0 && chi2[i] <= chi2Max && ld[i] > -1e9 && n[i] > 0 && !Double.isNaN(chi2[i])) keep[k++] = i;
+            if (chi2[i] >= 0 && ld[i] > -1e9 && n[i] > 0 && !Double.isNaN(chi2[i]) && !Double.isInfinite(chi2[i])) keep[k++] = i;
         if (k < 1000) throw new IllegalArgumentException("Only " + k + " SNPs left for LD score regression (need at least 1000)");
         double[] y = new double[k], u = new double[k], l = new double[k], wl = new double[k], nn = new double[k];
         double sumChi = 0, sumLN = 0, sumN = 0;
@@ -68,28 +67,33 @@ public final class LdscRegression {
         double median = k % 2 == 1 ? sorted[k / 2] : 0.5 * (sorted[k / 2 - 1] + sorted[k / 2]);
         r.lambdaGC = median / 0.4549364231195724;   // median of chi2(1)
 
-        // Starting values (ldsc's aggregate estimator), then IRWLS on the step-1 subset
-        double h2 = clamp(m * (r.meanChi2 - 1) / (sumLN / k), 0, 1);
-        double a = 1;
+        // ldsc's IRWLS: start from the aggregate estimate (intercept 1), update the weights twice, then fit and
+        // jackknife with those final weights. Step 1 (chi2 < 30) estimates the intercept; step 2 is its own IRWLS
+        // on all SNPs with that intercept fixed, starting again from the aggregate weights.
+        double h2agg = clamp(m * (r.meanChi2 - 1) / (sumLN / k), 0, 1);
         boolean[] sub = new boolean[k];
         for (int j = 0; j < k; j++) sub[j] = y[j] < 30;
-        double[] w = new double[k];
-        for (int it = 0; it < 3; it++) {
-            weights(w, a, h2, nn, l, wl, m);
-            double[] s = sums(w, u, y, sub, 0, k);
-            double[] ab = solve2(s);
-            h2 = ab[0]; a = ab[1];
+        double[] w1 = new double[k], w2 = new double[k];
+        weights(w1, 1, h2agg, nn, l, wl, m);
+        for (int it = 0; it < 2; it++) {
+            double[] ab = solve2(sums(w1, u, y, sub, 0, k));
+            weights(w1, ab[1], clamp(ab[0], 0, 1), nn, l, wl, m);
         }
-        // Final weights from the step-1 fit, held fixed for both steps and the jackknife
-        weights(w, a, clamp(h2, 0, 1), nn, l, wl, m);
+        double a1 = solve2(sums(w1, u, y, sub, 0, k))[1];
+        weights(w2, 1, h2agg, nn, l, wl, m);
+        for (int it = 0; it < 2; it++) {
+            double[] s = sums(w2, u, y, null, 0, k);
+            double slope = s[2] > 0 ? (s[4] - a1 * s[1]) / s[2] : 0;
+            weights(w2, a1, clamp(slope, 0, 1), nn, l, wl, m);
+        }
 
         int blocks = Math.max(2, Math.min(nBlocks, k / 10));
         double[][] subSums = new double[blocks][], allSums = new double[blocks][];
         double[] subTot = new double[5], allTot = new double[5];
         for (int b = 0; b < blocks; b++) {
             int from = (int) ((long) k * b / blocks), to = (int) ((long) k * (b + 1) / blocks);
-            subSums[b] = sums(w, u, y, sub, from, to);
-            allSums[b] = sums(w, u, y, null, from, to);
+            subSums[b] = sums(w1, u, y, sub, from, to);
+            allSums[b] = sums(w2, u, y, null, from, to);
             for (int q = 0; q < 5; q++) { subTot[q] += subSums[b][q]; allTot[q] += allSums[b][q]; }
         }
         double[] est = twoStep(subTot, allTot);
