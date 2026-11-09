@@ -279,7 +279,7 @@ public class ExcelExporter {
         File gwasFile = new File(schema.gwasFile);
         if (!gwasFile.exists()) return extraNames;
 
-        try (BufferedReader br = new BufferedReader(new FileReader(gwasFile), 1024 * 1024)) {
+        try (BufferedReader br = gwasio.GwasFiles.open(gwasFile)) {
             String header = br.readLine();
             if (header == null) return extraNames;
             String[] cols = header.trim().split("\t");

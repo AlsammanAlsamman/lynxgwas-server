@@ -263,6 +263,32 @@ public class ServerSecurityTest {
         try { ServerApi.normalizeToTsv(new ByteArrayInputStream("CHR\tBP\n".getBytes()), out, 1 << 20); refused = false; }
         catch (IOException e) { refused = true; }
         check(refused, "header-only file refused");
+
+        ByteArrayOutputStream zip = new ByteArrayOutputStream();
+        try (java.util.zip.ZipOutputStream z = new java.util.zip.ZipOutputStream(zip)) {
+            z.putNextEntry(new java.util.zip.ZipEntry("__MACOSX/._gwas.csv")); z.write(new byte[]{0, 1, 2}); z.closeEntry();
+            z.putNextEntry(new java.util.zip.ZipEntry("results/")); z.closeEntry();
+            z.putNextEntry(new java.util.zip.ZipEntry("results/gwas.csv")); z.write("CHR,BP,P\n3,7,0.2\n".getBytes()); z.closeEntry();
+        }
+        ServerApi.normalizeToTsv(new ByteArrayInputStream(zip.toByteArray()), out, 1 << 20);
+        check(new String(Files.readAllBytes(out.toPath())).equals("CHR\tBP\tP\n3\t7\t0.2\n"), "zipped CSV (with a folder and macOS metadata) becomes TSV");
+
+        ByteArrayOutputStream inner = new ByteArrayOutputStream();
+        try (GZIPOutputStream g = new GZIPOutputStream(inner)) { g.write("CHR\tBP\tP\n4\t9\t0.3\n".getBytes()); }
+        ByteArrayOutputStream zipGz = new ByteArrayOutputStream();
+        try (java.util.zip.ZipOutputStream z = new java.util.zip.ZipOutputStream(zipGz)) {
+            z.putNextEntry(new java.util.zip.ZipEntry("gwas.tsv.gz")); z.write(inner.toByteArray()); z.closeEntry();
+        }
+        ServerApi.normalizeToTsv(new ByteArrayInputStream(zipGz.toByteArray()), out, 1 << 20);
+        check(new String(Files.readAllBytes(out.toPath())).equals("CHR\tBP\tP\n4\t9\t0.3\n"), "gzipped table inside a .zip is unpacked");
+
+        ByteArrayOutputStream emptyZip = new ByteArrayOutputStream();
+        try (java.util.zip.ZipOutputStream z = new java.util.zip.ZipOutputStream(emptyZip)) {
+            z.putNextEntry(new java.util.zip.ZipEntry("docs/")); z.closeEntry();
+        }
+        try { ServerApi.normalizeToTsv(new ByteArrayInputStream(emptyZip.toByteArray()), out, 1 << 20); refused = false; }
+        catch (IOException e) { refused = true; }
+        check(refused, ".zip without a data file refused");
     }
 
     static void limiters() throws Exception {

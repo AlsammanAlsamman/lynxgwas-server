@@ -105,7 +105,7 @@ public class RsidRecovery {
 
         // Parse GWAS file — collect SNPs per locus
         List<String[]> gwasSnps = new ArrayList<>(); // {chr, pos, ea, nea}
-        try (BufferedReader br = new BufferedReader(new FileReader(gwasFile), 1024 * 1024)) {
+        try (BufferedReader br = gwasio.GwasFiles.open(gwasFile)) {
             String header = br.readLine();
             String[] hcols = header.trim().split("\t");
             int iChr2 = colIdx(hcols, colChr), iPos = colIdx(hcols, colPos);

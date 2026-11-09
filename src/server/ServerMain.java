@@ -5,6 +5,7 @@ import java.util.concurrent.*;
  * Starts the online LYNXgwas server.
  *
  *   java -cp "bin:lib/*" ServerMain            (settings from $LYNX_SERVER_CONFIG or ./server.properties)
+ *   java -cp "bin:lib/*" ServerMain import-pack <pack.zip | zenodo>   (public datasets; see PackCli)
  *
  * Run it from the app folder (index.html, tools/, bin/ and projects/ are resolved from there),
  * as an unprivileged user, behind a TLS reverse proxy. See docs/DEPLOY.md.
@@ -12,6 +13,8 @@ import java.util.concurrent.*;
 public class ServerMain {
 
     public static void main(String[] args) throws Exception {
+        if (PackCli.handles(args)) System.exit(PackCli.run(args));   // import-pack / export-pack, run from the app folder
+        if (RequiredData.handles(args)) System.exit(RequiredData.run(args));   // check / setup of the reference data
         System.out.println("=== LYNXgwas Server ===");
         if (netguard.OfflineMode.on())   // LYNXGWAS_OFFLINE=1 or -Dlynxgwas.offline=true; e-mail (SMTP) is still sent
             System.out.println("Offline mode: no online lookups (rsIDs, GWAS Catalog, Open Targets).");
@@ -23,6 +26,7 @@ public class ServerMain {
         warnAboutOldAccounts(cfg);
         ServerApi api = new ServerApi(ctx);
         LocalServer server = new LocalServer(ctx, api);
+        api.packs().onRunsImported(server::adoptImportedRuns);
         server.start();
         System.out.printf("Listening on %s:%d (public address %s%s)%n", cfg.bindHost, cfg.port, String.join(", ", cfg.publicOrigins), cfg.basePath);
         System.out.printf("Workspaces: %d, public datasets: %d, retention: %d days, idle workspaces removed after %d days%n",
@@ -64,6 +68,8 @@ public class ServerMain {
             System.out.println("[WARN] secure.cookies=false with a non-local public.origin: workspace cookies would travel without TLS.");
         if (cfg.maxStorageTotalMb == 0)
             System.out.println("[WARN] max.storage.total.mb=0 (no limit): anonymous visitors could fill the disk.");
+        for (String m : RequiredData.missingRequired("37"))
+            System.out.println("[WARN] Missing reference data, run \"setup\": " + m);
         if (cfg.refPanelPath.isEmpty())
             System.out.println("[WARN] No ref.panel.path: LD and fine-mapping will be unavailable for user projects.");
     }

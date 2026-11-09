@@ -39,6 +39,9 @@ public class ServerConfig {
     public String refPanelPath = "";
     public String refPanelPopulation = "EUR";
     public String gff3File = "";
+    /** The same for GRCh38 projects (empty: GRCh38 projects get no LD-based analyses / gene annotation). */
+    public String refPanelPathGrch38 = "";
+    public String gff3FileGrch38 = "";
     /** SuSiEx.py on the server (empty = SuSiEx runs disabled). */
     public String susiexPath = "";
 
@@ -93,6 +96,8 @@ public class ServerConfig {
         c.refPanelPath         = p.getProperty("ref.panel.path", c.refPanelPath).trim();
         c.refPanelPopulation   = p.getProperty("ref.panel.population", c.refPanelPopulation).trim();
         c.gff3File             = p.getProperty("gff3.file", c.gff3File).trim();
+        c.refPanelPathGrch38   = p.getProperty("ref.panel.path.grch38", c.refPanelPathGrch38).trim();
+        c.gff3FileGrch38       = p.getProperty("gff3.file.grch38", c.gff3FileGrch38).trim();
         c.susiexPath           = p.getProperty("susiex.path", c.susiexPath).trim();
         c.retentionDays        = intProp(p, "retention.days", c.retentionDays);
         c.workspaceIdleDays    = intProp(p, "workspace.idle.days", c.workspaceIdleDays);
@@ -134,6 +139,12 @@ public class ServerConfig {
     }
 
     public File dataDir()     { return new File(dataDir); }
+
+    /** Reference panel (PLINK prefix) for a project of this build. */
+    public String refPanelFor(String genomeBuild) { return GenomeLiftover.isGrch38(genomeBuild) ? refPanelPathGrch38 : refPanelPath; }
+
+    /** Gene annotation (GFF3) for a project of this build. */
+    public String gff3For(String genomeBuild) { return GenomeLiftover.isGrch38(genomeBuild) ? gff3FileGrch38 : gff3File; }
     public File projectsDir() { return new File(projectsDir); }
 
     private static int intProp(Properties p, String k, int d) {

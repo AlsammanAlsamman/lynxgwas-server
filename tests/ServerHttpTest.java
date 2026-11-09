@@ -105,8 +105,14 @@ public class ServerHttpTest {
         // ── Removed desktop endpoints ──
         for (String p : new String[]{"/api/agent/chat", "/api/agent/config", "/pick-file", "/pick-folder", "/save-pdf", "/api/global-config",
                 "/api/peek-file-header?path=/etc/passwd", "/api/rsid-detect?gwas_file=/etc/passwd", "/api/github/token",
-                "/api/shared-storage/test", "/api/export-projects-info", "/api/search/rebuild-index", "/manifest", "/progress"})
+                "/api/shared-storage/test", "/api/pack/export", "/api/pack/import", "/api/example-data/install", "/manifest", "/progress"})
             check(anon.get(p).statusCode() == 404, "removed: " + p);
+        // The dataset table and the search-index rebuild exist on the server: the table of public datasets is
+        // open (no file paths in it), your own needs your workspace, and the rebuild needs a workspace
+        check(anon.get("/api/export-projects-info?scope=public").statusCode() == 200, "dataset table of public datasets");
+        check(anon.get("/api/export-projects-info?scope=mine").statusCode() == 401, "dataset table of own projects needs a workspace");
+        check(anon.send("POST", "/api/search/rebuild-index", "{}", true).statusCode() >= 400, "index rebuild refused without a workspace");
+        check(anon.get("/api/my/pack-download?file=lynxgwas-x.zip").statusCode() >= 400, "pack download needs a workspace");
         check(anon.send("OPTIONS", "/api/projects", null, false).statusCode() == 405, "OPTIONS (CORS preflight) refused");
 
         // ── Public datasets: open to read, closed to write ──

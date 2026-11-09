@@ -242,8 +242,21 @@ public class GlobalConfig {
 
     // ── Parsing ──────────────────────────────────────────────────
 
+    /** Shipped defaults (the panels "setup" builds), copied to config/global.json on first use. */
+    private static final String DEFAULT_PATH = "config/global.default.json";
+
     private static GlobalConfig createDefault() {
-        return new GlobalConfig();
+        File d = new File(DEFAULT_PATH);
+        if (!d.isFile()) return new GlobalConfig();
+        try {
+            String json = new String(Files.readAllBytes(d.toPath()), "UTF-8");
+            File f = new File(CONFIG_PATH);
+            if (!f.exists()) Files.write(f.toPath(), json.getBytes("UTF-8"));
+            return parse(json);
+        } catch (Exception e) {
+            System.err.println("[GlobalConfig] Error loading defaults: " + e.getMessage());
+            return new GlobalConfig();
+        }
     }
 
     /** Test-only entry point into the otherwise-private parse() — this project has no test

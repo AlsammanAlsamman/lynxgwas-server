@@ -135,6 +135,6 @@ public class PlinkSubsetter {
         for (String c : candidates) {
             if (new File(c).exists()) return new File(c).getAbsolutePath();
         }
-        return null;
+        return loci.LociIdentifier.plinkPath();   // the app's own bin/ or PATH, whatever the working folder
     }
 }

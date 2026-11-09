@@ -440,7 +440,8 @@ function draw(){
   var lnote = document.getElementById('laneNote');
   if (lnote) lnote.textContent = (separated ? 'Nearby serpents are moved apart just enough not to cross; each starts at its true position on the chromosome bar.'
                                            : 'Nearby loci can overlap at this zoom: pick a chromosome to separate them.')
-    + (D.n_mhc_loci ? ' ' + D.n_mhc_loci + ' locus/loci in the MHC window (' + D.mhc_window + ') are drawn in grey and left out of the clustering and category tests.' : '');
+    + (D.n_mhc_loci ? ' ' + D.n_mhc_loci + ' locus/loci in the MHC window (' + D.mhc_window + ') are drawn in grey and left out of the clustering and category tests.' : '')
+    + (D.lifted_datasets && D.lifted_datasets.length ? ' Datasets on the other build were lifted to ' + D.genome_build + ' for this run: ' + D.lifted_datasets.join(', ') + '.' : '');
   visible.sort(function(a,b){ return b.bestP - a.bestP; }); // weakest first, strongest on top
   var gid = 0;
   visible.forEach(function(L){

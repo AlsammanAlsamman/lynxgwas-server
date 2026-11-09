@@ -74,6 +74,8 @@ public class GlobalSearchIndex {
     // GRCh38-equivalent position index: native GRCh38 hits, plus GRCh37 hits successfully lifted
     // (cached at build time, never re-lifted per query).
     private final Map<String, List<Hit>> byPosGRCh38 = new HashMap<>();
+    // GRCh37-equivalent position index: native GRCh37 hits, plus GRCh38 hits lifted down (hg38ToHg19 chain)
+    private final Map<String, List<Hit>> byPosGRCh37 = new HashMap<>();
     private final List<ProjectBuildInfo> projectBuilds = new ArrayList<>();
 
     public static class ProjectBuildInfo {
@@ -165,21 +167,9 @@ public class GlobalSearchIndex {
             List<Hit> hits = byPosGRCh38.get(key);
             if (hits != null) r.hits.addAll(hits);
         } else if ("GRCh37".equalsIgnoreCase(qb)) {
-            Map<String, List<Hit>> nativeGrch37 = byPosNative.get("GRCh37");
-            List<Hit> hits = nativeGrch37 != null ? nativeGrch37.get(key) : null;
+            // Native GRCh37 projects + GRCh38 projects successfully lifted down are merged here.
+            List<Hit> hits = byPosGRCh37.get(key);
             if (hits != null) r.hits.addAll(hits);
-            // No GRCh38->GRCh37 liftover exists anywhere in this codebase (GenomeLiftover is
-            // GRCh37->GRCh38 only). Every GRCh38 project is therefore explicitly flagged as not
-            // compared for a GRCh37 query, rather than silently skipped or wrongly compared.
-            for (ProjectBuildInfo pbi : projectBuilds) {
-                if ("GRCh38".equalsIgnoreCase(pbi.build)) {
-                    NotCompared nc = new NotCompared();
-                    nc.projectId = pbi.id;
-                    nc.projectName = pbi.name;
-                    nc.reason = "not compared (GRCh38→GRCh37 liftover unavailable)";
-                    r.notCompared.add(nc);
-                }
-            }
         } else {
             // Unrecognized build string on the query itself — fall back to a same-build-only
             // comparison rather than guessing a liftover direction.
@@ -242,7 +232,7 @@ public class GlobalSearchIndex {
 
                     ProjectMetadata pm = ProjectMetadata.load(dir.getAbsolutePath());
                     String projectName = (pm != null && pm.name != null && !pm.name.isEmpty()) ? pm.name : projectId;
-                    String build = (cfg.genomeBuild == null || cfg.genomeBuild.trim().isEmpty()) ? "GRCh37" : cfg.genomeBuild.trim();
+                    String build = GenomeLiftover.normalize(cfg.genomeBuild);   // "GRCh37 (lifted from GRCh38)" is GRCh37
                     String effectType = cfg.effectType == null ? "" : cfg.effectType.trim();
 
                     ProjectBuildInfo pbi = new ProjectBuildInfo();
@@ -330,7 +320,11 @@ public class GlobalSearchIndex {
                             // ---- position index: GRCh38-effective ----
                             if ("GRCh38".equalsIgnoreCase(build)) {
                                 idx.byPosGRCh38.computeIfAbsent(posKey, k -> new ArrayList<>()).add(idx.toHit(rec, null, null));
+                                GenomeLiftover.Result down = GenomeLiftover.toGRCh37(rec.chr, rec.pos, rec.pos);
+                                if (down.ok)
+                                    idx.byPosGRCh37.computeIfAbsent(normalizeChr(down.chr) + ":" + down.start, k -> new ArrayList<>()).add(idx.toHit(rec, null, null));
                             } else if ("GRCh37".equalsIgnoreCase(build)) {
+                                idx.byPosGRCh37.computeIfAbsent(posKey, k -> new ArrayList<>()).add(idx.toHit(rec, null, null));
                                 GenomeLiftover.Result lifted = GenomeLiftover.toGRCh38(rec.chr, rec.pos, rec.pos);
                                 if (lifted.ok) {
                                     String liftedKey = normalizeChr(lifted.chr) + ":" + lifted.start;

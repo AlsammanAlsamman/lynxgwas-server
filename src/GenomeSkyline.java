@@ -55,7 +55,7 @@ public class GenomeSkyline {
         double[] bins = new double[binCount]; // max -log10(P) per bin
         long snpCount = 0;
 
-        try (BufferedReader br = new BufferedReader(new FileReader(config.gwasFile), 1024 * 1024)) {
+        try (BufferedReader br = gwasio.GwasFiles.open(config.gwasFile)) {
             String header = br.readLine();
             if (header == null) return;
 

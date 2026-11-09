@@ -55,6 +55,8 @@ public class GeneConstellationBuilder {
         int unassigned = 0;
 
         out.mhcWindow = MhcRegion.label(mlr.genomeBuild);
+        out.genomeBuild = mlr.genomeBuild;
+        out.liftedDatasets = new ArrayList<>(mlr.liftedDatasets);
         for (MultiLocusResult.LocusRow row : mlr.loci) {
             String gene = row.nearestGene == null ? "" : row.nearestGene.trim();
             // MHC loci: their long-range LD links genes across unrelated diseases, so they get no node,

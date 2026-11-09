@@ -6,7 +6,9 @@ public class MultiLocusResult {
     public String refPanelId    = "";
     public String refPanelLabel = "";
     public String createdAt     = "";
-    public String genomeBuild   = "GRCh37"; // build of the aligned loci (GRCh38 only when every dataset is)
+    public String genomeBuild   = "GRCh37"; // build of the aligned loci: GRCh38 when any dataset is
+    /** Datasets on the other build, lifted to genomeBuild for this run (shown to the user). */
+    public List<String> liftedDatasets = new ArrayList<>();
     public List<DatasetInfo> datasets = new ArrayList<>();
     public List<LocusRow> loci        = new ArrayList<>();
 
@@ -78,6 +80,9 @@ public class MultiLocusResult {
         kv(j, "created_at", createdAt); j.append(",");
         kv(j, "genome_build", genomeBuild); j.append(",");
         kv(j, "mhc_window", MhcRegion.label(genomeBuild)); j.append(",");
+        j.append("\"lifted_datasets\":[");
+        for (int i = 0; i < liftedDatasets.size(); i++) { if (i > 0) j.append(','); j.append('"').append(esc(liftedDatasets.get(i))).append('"'); }
+        j.append("],");
 
         j.append("\"datasets\":[");
         for (int i = 0; i < datasets.size(); i++) {
@@ -205,6 +210,7 @@ public class MultiLocusResult {
         r.createdAt     = str(o, "created_at");
         String gb = str(o, "genome_build");
         if (!gb.isEmpty()) r.genomeBuild = gb; // runs saved before this field are GRCh37
+        for (Object lv : list(o, "lifted_datasets")) r.liftedDatasets.add(String.valueOf(lv));
         for (Object dv : list(o, "datasets")) {
             Map<String, Object> d = MiniJson.asObject(dv);
             DatasetInfo di = new DatasetInfo(str(d, "id"), str(d, "name"), str(d, "effect_type"));

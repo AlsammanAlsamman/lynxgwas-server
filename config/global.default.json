@@ -1,0 +1,8 @@
+{
+  "reference_panels": [
+    {"id": "eur_grch37", "label": "1000 Genomes EUR, 503 samples (GRCh37)", "population": "EUR", "build": "hg19", "plink_path": "resources/panels/eur_grch37"},
+    {"id": "eur_grch38", "label": "1000 Genomes EUR, 503 samples (GRCh38)", "population": "EUR", "build": "hg38", "plink_path": "resources/panels/eur_grch38"}
+  ],
+  "snp_databases": [],
+  "ncbi_api": {"enabled": false, "base_url": "", "api_key": "", "rate_limit_per_sec": 3, "restrict_to_lead_snps": true}
+}

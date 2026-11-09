@@ -86,6 +86,16 @@ public class RegulatoryPeakIndexTest {
             List<RegulatoryPeakIndex.Peak> corrupt = idx.peaksOverlapping("BADEID", "H3K27ac", "chr1", 1000, 2000);
             failures += check("corrupt/non-gzip file returns empty, does not throw", corrupt.isEmpty());
 
+            // ── Tissue from the disease name: server project ids ("u-...") carry no disease prefix ──
+            failures += check("disease name maps a random id to its tissue",
+                "E034".equals(RegulatoryPeakIndex.resolveEid("u-3f9a1c", "Rheumatoid arthritis")));
+            failures += check("short code as disease name maps too",
+                "E073".equals(RegulatoryPeakIndex.resolveEid("u-3f9a1c", "SCZ")));
+            failures += check("unmapped disease name falls back to the id prefix",
+                "E065".equals(RegulatoryPeakIndex.resolveEid("cad-src-x", "Lupus")));
+            failures += check("no disease name, random id: no tissue",
+                RegulatoryPeakIndex.resolveEid("u-3f9a1c", "") == null);
+
             if (failures == 0) {
                 System.out.println("PASS: all RegulatoryPeakIndex tests passed");
             } else {

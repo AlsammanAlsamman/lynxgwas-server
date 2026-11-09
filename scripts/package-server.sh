@@ -69,7 +69,7 @@ mkdir -p "$OUT/app/scripts" && cp scripts/ukbb_ld.py "$OUT/app/scripts/"   # UK 
 cp -r docs/images "$OUT/app/docs/"
 cp index.html viewer.html serpent_plot.html gene_constellation.html summary.html "$OUT/app/"
 mkdir -p "$OUT/app/config"
-[ -f config/global.json ] && cp config/global.json "$OUT/app/config/global.json.example"
+cp config/global.default.json "$OUT/app/config/global.json"; cp config/required_data.json "$OUT/app/config/"   # panels from setup; the list setup and check use
 cp server.properties.example LICENSE "$OUT/"
 cp docs/DEPLOY.md docs/SECURITY.md "$OUT/" 2>/dev/null || true
 cp -r deploy "$OUT/" 2>/dev/null || true
@@ -81,7 +81,8 @@ cat > "$OUT/lynxgwas-server" <<'EOF'
 # Settings: ./server.properties (or $LYNX_SERVER_CONFIG). Extra JVM options: $LYNX_JAVA_OPTS.
 HERE="$(cd "$(dirname "$0")" && pwd)"
 export LYNX_SERVER_CONFIG="${LYNX_SERVER_CONFIG:-$HERE/server.properties}"
-if [ ! -f "$LYNX_SERVER_CONFIG" ]; then
+case "${1:-}" in check|setup|import-pack|export-pack) NEEDS_SETTINGS=no ;; *) NEEDS_SETTINGS=yes ;; esac
+if [ "$NEEDS_SETTINGS" = yes ] && [ ! -f "$LYNX_SERVER_CONFIG" ]; then
   echo "No settings file at $LYNX_SERVER_CONFIG. Copy server.properties.example to server.properties and edit it." >&2
   exit 1
 fi
@@ -96,7 +97,9 @@ cat > "$OUT/lynxgwas-server.bat" <<'EOF'
 rem Starts LYNXgwas Server with its bundled Java runtime (no Java installation needed).
 set "HERE=%~dp0"
 if "%LYNX_SERVER_CONFIG%"=="" set "LYNX_SERVER_CONFIG=%HERE%server.properties"
-if not exist "%LYNX_SERVER_CONFIG%" (
+set "NEEDS_SETTINGS=yes"
+for %%c in (check setup import-pack export-pack) do if /i "%~1"=="%%c" set "NEEDS_SETTINGS=no"
+if "%NEEDS_SETTINGS%"=="yes" if not exist "%LYNX_SERVER_CONFIG%" (
   echo No settings file at %LYNX_SERVER_CONFIG%. Copy server.properties.example to server.properties and edit it.
   exit /b 1
 )

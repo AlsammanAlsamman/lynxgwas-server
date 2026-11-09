@@ -80,3 +80,6 @@ dist/
 
 # Docker: local secrets for docker compose
 .env
+
+# Live settings of an installation: made from config/global.default.json on first use
+config/global.json

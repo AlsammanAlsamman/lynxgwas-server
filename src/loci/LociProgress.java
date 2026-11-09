@@ -7,12 +7,16 @@ public class LociProgress {
     public volatile boolean done       = false;
     public volatile boolean cancelled  = false;
     public volatile String error       = null;
+    /** Non-fatal notes for the user (e.g. a chromosome identified without LD clumping); null when none. */
+    public volatile String warning     = null;
 
     public volatile int candidateSnps     = 0;
     public volatile int seedSnps          = 0;
     public volatile int lociFound         = 0;
     public volatile int totalChromosomes  = 0;
     public volatile int currentChromosome = 0;
+
+    public synchronized void addWarning(String w) { warning = warning == null ? w : warning + " " + w; }
 
     public int pct() {
         if (done) return 100;
@@ -25,11 +29,11 @@ public class LociProgress {
     public String toJson() {
         return String.format(
             "{\"pct\":%d,\"current_step\":\"%s\",\"step_index\":%d,\"total_steps\":%d," +
-            "\"done\":%s,\"error\":%s," +
+            "\"done\":%s,\"error\":%s,\"warning\":%s," +
             "\"candidate_snps\":%d,\"seed_snps\":%d,\"loci_found\":%d," +
             "\"total_chromosomes\":%d,\"current_chromosome\":%d}",
             pct(), esc(currentStep), stepIndex, totalSteps,
-            done, error != null ? "\"" + esc(error) + "\"" : "null",
+            done, error != null ? "\"" + esc(error) + "\"" : "null", warning != null ? "\"" + esc(warning) + "\"" : "null",
             candidateSnps, seedSnps, lociFound,
             totalChromosomes, currentChromosome);
     }

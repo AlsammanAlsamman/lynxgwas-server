@@ -17,7 +17,7 @@ public class GwasParser {
         long lineCount = 0;
         long snpCount  = 0;
 
-        try (BufferedReader br = new BufferedReader(new FileReader(config.gwasFile), 1024 * 1024)) {
+        try (BufferedReader br = gwasio.GwasFiles.open(config.gwasFile)) {
             String header = br.readLine();
             if (header == null) throw new IOException("GWAS file is empty");
 

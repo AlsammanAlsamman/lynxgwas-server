@@ -12,6 +12,8 @@ public class Main {
     }
 
     public static void main(String[] args) throws Exception {
+        if (PackCli.handles(args)) System.exit(PackCli.run(args));   // import-pack / export-pack
+        if (RequiredData.handles(args)) System.exit(RequiredData.run(args));   // check / setup of the reference data
         System.out.println("=== LYNXgwas – Locus Analysis and Genomic Explorer ===");
         System.out.printf("Pipeline version: %s%n%n", Config.PIPELINE_VERSION);
 

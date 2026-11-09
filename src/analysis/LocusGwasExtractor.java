@@ -111,7 +111,7 @@ public class LocusGwasExtractor {
     private static int extractGwasRows(Config config, Locus locus, File outFile)
             throws IOException {
         int count = 0, derivedBetaSe = 0, recomputedPval = 0;
-        try (BufferedReader br = new BufferedReader(new FileReader(config.gwasFile), 1024 * 1024);
+        try (BufferedReader br = gwasio.GwasFiles.open(config.gwasFile);
              PrintWriter pw = new PrintWriter(new BufferedWriter(new FileWriter(outFile)))) {
 
             String headerLine = br.readLine();
@@ -238,7 +238,7 @@ public class LocusGwasExtractor {
             "--silent"
         );
 
-        PlinkRunner.Result r = PlinkRunner.run(plinkBin, args, PlinkRunner.FULL_PANEL_MB);
+        PlinkRunner.Result r = PlinkRunner.run(plinkBin, args, PlinkRunner.fullPanelMb(refPanelPath));
         plinkOut.exitCode = r.exitCode;
         plinkOut.outputTail = r.outputTail;
 

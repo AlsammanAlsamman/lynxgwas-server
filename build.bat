@@ -7,6 +7,7 @@ set "LIBCP="
 for %%f in (lib\*.jar) do call set "LIBCP=%%LIBCP%%;%%f"
 
 javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
+  src\gwasio\GwasFiles.java ^
   src\netguard\OfflineMode.java ^
   src\rsid\DbSnpRecord.java ^
   src\rsid\MatchResult.java ^
@@ -67,6 +68,7 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   src\analysis\BaseStepPipeline.java ^
   src\analysis\EnrichmentAnalyzer.java ^
   src\analysis\RegulatoryPeakIndex.java ^
+  src\analysis\RefBuild.java ^
   src\analysis\Sce2gLinks.java ^
   src\analysis\RegulatoryEnrichmentAnalyzer.java ^
   src\analysis\MiniJson.java ^
@@ -103,6 +105,10 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   src\GenomeSkyline.java ^
   src\GenomeLiftover.java ^
   src\ProjectMetadata.java ^
+  src\ExampleDataInstaller.java ^
+  src\ProjectPackExporter.java ^
+  src\PackCli.java ^
+  src\RequiredData.java ^
   src\JsonExporter.java ^
   src\RepairLocusGenes.java ^
   src\LocusUpdater.java ^
@@ -111,6 +117,7 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   src\server\FileSafety.java ^
   src\server\ServerConfig.java ^
   src\server\WorkspaceService.java ^
+  src\server\WorkspacePacks.java ^
   src\server\ProjectRegistry.java ^
   src\server\RequestLimiter.java ^
   src\server\JobLimiter.java ^

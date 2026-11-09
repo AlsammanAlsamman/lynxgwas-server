@@ -355,8 +355,7 @@ td.actions .btn { margin: 0 0 0 0.35rem; padding: 0.35rem 0.8rem; font-size: 0.8
       <div class="menu">
         <button class="btn btn-secondary" type="button" aria-haspopup="true" aria-expanded="false" onclick="toggleMenu(this)">Compare datasets <span class="caret" aria-hidden="true">▾</span></button>
         <div class="menu-list" role="menu">
-          <button role="menuitem" onclick="closeMenus();openLocusMatrix()"><b>Gene Constellation</b><span>Shared genes and loci across datasets</span></button>
-          <button role="menuitem" onclick="closeMenus();openLocusMatrix('serpent')"><b>Locus Serpent Plot</b><span>One serpent per locus through every dataset</span></button>
+          <button role="menuitem" onclick="closeMenus();openLocusMatrix()"><b>Cross-dataset run</b><span>Loci and genes shared across datasets, seen as a Locus Serpent Plot and a Gene Constellation</span></button>
           <button role="menuitem" onclick="closeMenus();openSusiex()"><b>SuSiEx</b><span>Cross-ancestry fine-mapping of one region</span></button>
         </div>
       </div>
@@ -365,6 +364,10 @@ td.actions .btn { margin: 0 0 0 0.35rem; padding: 0.35rem 0.8rem; font-size: 0.8
         <div class="menu-list" role="menu">
           <button role="menuitem" onclick="closeMenus();openMissingRsids()"><b>Missing rsIDs</b><span>SNPs without an rsID in your projects</span></button>
           <button role="menuitem" onclick="closeMenus();openToolsManager()"><b>Analysis tools</b><span>What each fine-mapping tool does and needs</span></button>
+          <button role="menuitem" onclick="closeMenus();exportProjectsInfo()"><b>Dataset table</b><span>One sheet with N, ancestry, build and h2 of the datasets shown</span></button>
+          <button role="menuitem" onclick="closeMenus();rebuildSearchIndex()"><b>Rebuild search index</b><span>Make new results findable in Search now</span></button>
+          <button role="menuitem" onclick="closeMenus();packOpenExport()"><b>Export my projects</b><span>One .zip with their results, to keep or share</span></button>
+          <button role="menuitem" onclick="closeMenus();packOpenImport()"><b>Import a pack</b><span>Projects from a LYNXgwas .zip, into your workspace</span></button>
         </div>
       </div>
       <button class="btn btn-primary" id="btn-new" onclick="newProject()">+ New project</button>
@@ -393,7 +396,7 @@ td.actions .btn { margin: 0 0 0 0.35rem; padding: 0.35rem 0.8rem; font-size: 0.8
       <div id="empty-body">
         <p class="empty-lead">Analyse your own GWAS summary statistics in four steps. No account needed: your projects stay private to this browser.</p>
         <ol class="onboard-steps">
-          <li><span class="n">1</span><b>Upload</b><span>your summary statistics (.tsv, .csv or .txt, optionally gzipped)</span></li>
+          <li><span class="n">1</span><b>Upload</b><span>your summary statistics (.tsv, .csv or .txt, optionally gzipped or zipped)</span></li>
           <li><span class="n">2</span><b>Find loci</b><span>genome-wide significant regions are grouped into loci</span></li>
           <li><span class="n">3</span><b>Process</b><span>genes, LD and annotations for every locus</span></li>
           <li><span class="n">4</span><b>Explore</b><span>open the viewer, fine-map and download the results</span></li>
@@ -403,8 +406,8 @@ td.actions .btn { margin: 0 0 0 0.35rem; padding: 0.35rem 0.8rem; font-size: 0.8
     </div>
   </div>
 
-  <div class="table-wrap runs-wrap" id="runs-constellation" style="display:none">
-    <h3 class="runs-title"><span class="runs-scope-label">Public</span> Gene Constellation runs</h3>
+  <div class="table-wrap runs-wrap" id="runs-cross" style="display:none">
+    <h3 class="runs-title"><span class="runs-scope-label">Public</span> cross-dataset runs</h3>
     <table>
       <thead>
         <tr>
@@ -414,42 +417,20 @@ td.actions .btn { margin: 0 0 0 0.35rem; padding: 0.35rem 0.8rem; font-size: 0.8
           <th>Loci</th>
           <th>Status</th>
           <th>Created</th>
-          <th>Actions</th>
+          <th>Views and actions</th>
         </tr>
       </thead>
-      <tbody id="locus-matrix-tbody"></tbody>
+      <tbody id="runs-tbody"></tbody>
     </table>
-    <div class="empty" id="locus-matrix-empty" style="display:none">
-      <p>No Gene Constellation runs yet. Use <b>Compare datasets</b> above to start one.</p>
-    </div>
-  </div>
-
-  <div class="table-wrap runs-wrap" id="runs-serpent" style="display:none">
-    <h3 class="runs-title"><span class="runs-scope-label">Public</span> Locus Serpent Plot runs</h3>
-    <table>
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Datasets</th>
-          <th>Ref Panel</th>
-          <th>Loci</th>
-          <th>Status</th>
-          <th>Created</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody id="serpent-tbody"></tbody>
-    </table>
-    <div class="empty" id="serpent-empty" style="display:none">
-      <p>No Locus Serpent Plot runs yet. Use <b>Compare datasets</b> above to start one.</p>
+    <div class="empty" id="runs-empty" style="display:none">
+      <p>No cross-dataset runs yet. Use <b>Compare datasets</b> above to start one.</p>
     </div>
   </div>
 
   <div class="runs-hint" id="runs-empty-hint" style="display:none">
     <b>Compare datasets</b>
     <span id="runs-empty-text">No cross-dataset runs yet.</span>
-    <button class="btn btn-secondary btn-sm" onclick="openLocusMatrix()">Gene Constellation</button>
-    <button class="btn btn-secondary btn-sm" onclick="openLocusMatrix('serpent')">Locus Serpent Plot</button>
+    <button class="btn btn-secondary btn-sm" onclick="openLocusMatrix()">Cross-dataset run</button>
   </div>
 
   <details class="manual-panel">
@@ -554,6 +535,144 @@ async function loadProjects() {
 }
 
 window.LYNX_onAuthChange = function() { loadProjects(); loadLocusMatrixJobs(); };
+
+// ═══════════════════════════════════════════════════════════════
+// Project packs: export your projects as one .zip, import a pack into your workspace
+// ═══════════════════════════════════════════════════════════════
+var packTimer = null;
+
+function exportProjectsInfo() { window.location.href = API + '/api/export-projects-info?scope=' + scope; }
+
+async function rebuildSearchIndex() {
+  if (!LYNX.requireSignIn('', rebuildSearchIndex)) return;
+  var r = await fetch(API + '/api/search/rebuild-index', {method: 'POST'});
+  var d = {}; try { d = await r.json(); } catch (e) {}
+  alert(r.status === 202 ? 'Rebuilding the search index; new results are findable in a minute or two.' : (d.error || 'Could not rebuild the index.'));
+}
+
+function packGB(b) { return b >= 1e9 ? (b / 1e9).toFixed(2) + ' GB' : (b / 1e6).toFixed(0) + ' MB'; }
+
+function packOverlay() {
+  var overlay = document.getElementById('pack-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'pack-overlay';
+    overlay.className = 'wizard-overlay';
+    overlay.innerHTML = '<div class="wizard-box" style="max-width:640px" id="pack-box"></div>';
+    overlay.addEventListener('click', function(e) { if (e.target === overlay && !packTimer) overlay.classList.remove('open'); });
+    document.body.appendChild(overlay);
+  }
+  return overlay;
+}
+
+function packBar(p) {
+  var pct = p.bytes_total > 0 ? Math.min(100, 100 * p.bytes_done / p.bytes_total) : 0;
+  return esc(p.phase) + '<div style="height:8px;background:#e6ece9;border-radius:4px;overflow:hidden;margin:0.4rem 0">'
+    + '<div style="height:100%;width:' + pct.toFixed(1) + '%;background:#0F6E56"></div></div>'
+    + '<span style="color:#666">' + (p.bytes_total > 0 ? packGB(p.bytes_done) + ' of ' + packGB(p.bytes_total) : '')
+    + (p.files_total > 0 ? ' · ' + p.files_done.toLocaleString() + ' of ' + p.files_total.toLocaleString() + ' files' : '') + '</span>';
+}
+
+async function packOpenExport() {
+  if (!LYNX.requireSignIn('', packOpenExport)) return;
+  var mine = [];
+  try { var r = await fetch(API + '/api/projects?scope=mine'); mine = r.ok ? await r.json() : []; } catch (e) {}
+  var rows = mine.map(function(p) {
+    return '<label style="display:flex;gap:0.5rem;align-items:center;padding:0.2rem 0;font-size:0.84rem">'
+      + '<input type="checkbox" class="pack-pick" value="' + escAttr(p.id) + '"> ' + miniGenomeIcon(p.id) + '<b>' + esc(p.name || p.id) + '</b>'
+      + '<span style="color:#888">' + (p.loci_count != null ? p.loci_count + ' loci' : '') + (p.results_only ? ' · results only' : '') + '</span></label>';
+  }).join('');
+  packOverlay();
+  document.getElementById('pack-box').innerHTML = '<h3>Export my projects</h3>'
+    + '<p style="color:#666;font-size:0.85rem;margin:0.5rem 0 0.8rem">Packs the chosen projects, with all their results, into one .zip to download. '
+    + 'Keep it before your projects are deleted, open it in the LYNXgwas desktop app (Import), or give it to a colleague to import here. '
+    + 'LD matrices and other files LYNXgwas can rebuild are left out.</p>'
+    + '<div style="max-height:300px;overflow:auto;border:1px solid #e5e7eb;border-radius:8px;padding:0.4rem 0.7rem">' + (rows || 'You have no projects yet.') + '</div>'
+    + '<label style="display:block;margin-top:0.8rem;font-size:0.84rem"><input type="checkbox" id="pack-gwas"> Include the GWAS summary statistics '
+    + '<span style="color:#888">(much bigger; without them the projects arrive as results only and cannot be re-run)</span></label>'
+    + '<label style="display:block;margin-top:0.3rem;font-size:0.84rem"><input type="checkbox" id="pack-runs" checked> Include my cross-dataset runs '
+    + '<span style="color:#888">(Gene Constellation, Locus Serpent Plot and their joint fine-mapping) whose datasets are all chosen</span></label>'
+    + '<div id="pack-status" style="margin-top:0.9rem;font-size:0.84rem"></div>'
+    + '<div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:0.9rem">'
+    + '<button class="btn btn-secondary" onclick="packClose()">Close</button>'
+    + '<button class="btn btn-primary" id="pack-go" onclick="packExport()"' + (rows ? '' : ' disabled') + '>Export</button></div>';
+  document.getElementById('pack-overlay').classList.add('open');
+}
+
+function packClose() { if (!packTimer) document.getElementById('pack-overlay').classList.remove('open'); }
+
+async function packExport() {
+  var ids = Array.from(document.querySelectorAll('.pack-pick:checked')).map(function(c) { return c.value; });
+  var st = document.getElementById('pack-status');
+  if (!ids.length) { st.innerHTML = '<span style="color:#b91c1c">Choose at least one project.</span>'; return; }
+  var r = await fetch(API + '/api/my/pack-export', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({project_ids: ids, include_gwas: document.getElementById('pack-gwas').checked, include_runs: document.getElementById('pack-runs').checked})});
+  if (!r.ok) { var e = {}; try { e = await r.json(); } catch (x) {} st.innerHTML = '<span style="color:#b91c1c">' + esc(e.error || 'Could not start the export.') + '</span>'; return; }
+  document.getElementById('pack-go').disabled = true;
+  packTimer = setInterval(async function() {
+    var p;
+    try { p = await (await fetch(API + '/api/my/pack-export-progress')).json(); } catch (e) { return; }
+    if (!p.done) { st.innerHTML = packBar(p); return; }
+    clearInterval(packTimer); packTimer = null;
+    document.getElementById('pack-go').disabled = false;
+    if (p.error) { st.innerHTML = '<span style="color:#b91c1c">' + esc(p.error) + '</span>'; return; }
+    st.innerHTML = '<span style="color:#065f46"><b>Exported:</b> ' + esc(p.message || '') + '.</span> '
+      + '<a class="btn btn-primary" style="margin-left:0.4rem" href="' + API + '/api/my/pack-download?file=' + encodeURIComponent(p.file) + '">Download ' + esc(p.file) + '</a>';
+  }, 1000);
+}
+
+function packOpenImport() {
+  if (!LYNX.requireSignIn('', packOpenImport)) return;
+  var me = LYNX.me() || {};
+  packOverlay();
+  document.getElementById('pack-box').innerHTML = '<h3>Import a pack</h3>'
+    + '<p style="color:#666;font-size:0.85rem;margin:0.5rem 0 0.8rem">Adds the projects of a LYNXgwas .zip (made with Export here or in the desktop app) '
+    + 'to your workspace, with their results and cross-dataset runs. A workspace holds up to ' + (me.max_projects || 5) + ' projects; '
+    + 'imported projects follow the same ' + (me.retention_days || 15) + '-day deletion as your own.</p>'
+    + '<input type="file" id="pack-file" accept=".zip">'
+    + '<div id="pack-status" style="margin-top:0.9rem;font-size:0.84rem"></div>'
+    + '<div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:0.9rem">'
+    + '<button class="btn btn-secondary" onclick="packClose()">Close</button>'
+    + '<button class="btn btn-primary" id="pack-go" onclick="packImport()">Import</button></div>';
+  document.getElementById('pack-overlay').classList.add('open');
+}
+
+function packImport() {
+  var file = document.getElementById('pack-file').files[0];
+  var st = document.getElementById('pack-status');
+  var me = LYNX.me() || {};
+  if (!file) { st.innerHTML = '<span style="color:#b91c1c">Choose a .zip first.</span>'; return; }
+  var xhr = new XMLHttpRequest();
+  xhr.open('POST', API + '/api/upload/pack');
+  xhr.setRequestHeader('Content-Type', 'application/zip');
+  if (me.csrf) xhr.setRequestHeader('X-Lynx-CSRF', me.csrf);
+  document.getElementById('pack-go').disabled = true;
+  packTimer = -1;
+  xhr.upload.onprogress = function(e) {
+    if (e.lengthComputable) st.innerHTML = packBar({phase: 'Uploading ' + file.name, bytes_done: e.loaded, bytes_total: e.total});
+  };
+  xhr.onload = function() {
+    var d = {}; try { d = JSON.parse(xhr.responseText); } catch (e) {}
+    if (xhr.status !== 202) {
+      packTimer = null; document.getElementById('pack-go').disabled = false;
+      st.innerHTML = '<span style="color:#b91c1c">' + esc(d.error || ('Upload failed (HTTP ' + xhr.status + ')')) + '</span>';
+      return;
+    }
+    packTimer = setInterval(async function() {
+      var p;
+      try { p = await (await fetch(API + '/api/my/pack-import-progress')).json(); } catch (e) { return; }
+      if (!p.done) { st.innerHTML = packBar(p); return; }
+      clearInterval(packTimer); packTimer = null;
+      document.getElementById('pack-go').disabled = false;
+      if (p.error) { st.innerHTML = '<span style="color:#b91c1c">' + esc(p.error) + '</span>'; return; }
+      st.innerHTML = '<span style="color:#065f46"><b>Imported:</b> ' + esc(p.message || '') + '.</span>';
+      setScope('mine');
+    }, 1000);
+  };
+  xhr.onerror = function() { packTimer = null; document.getElementById('pack-go').disabled = false; st.textContent = 'Upload failed (network error).'; };
+  xhr.send(file);
+}
+
 
 // Small circularized-genome glyph shown next to each dataset's name on the home page — a mini,
 // deterministic (hashed from the project id, so it's stable across reloads) version of the
@@ -672,7 +791,7 @@ function actionButtons(p, st, own) {
   var primary = {
     upload: ['Upload data', 'editConfig'],
     loci: ['Find loci', 'lociOpen'],
-    process: [st.bad || st.text.indexOf('again') >= 0 ? 'Process again' : 'Process', 'reprocess'],
+    process: [st.bad || (st.text || '').indexOf('again') >= 0 ? 'Process again' : 'Process', 'reprocess'],  // public projects have no text
     open: ['Open results', 'openProject']
   }[st.action];
   var html = '';
@@ -929,11 +1048,11 @@ function wizRenderFiles(c) {
     '<div class="wiz-field"><label>GWAS summary statistics</label>'
     + '<div class="lx-upload-box" id="wiz-drop">'
     + '<p>' + (wiz.uploaded ? '&#10003; A GWAS file is uploaded. Choose another file to replace it.' : 'Drop your file here or choose it below.') + '</p>'
-    + '<input type="file" id="wiz-file" accept=".tsv,.txt,.csv,.gz,.tsv.gz,.txt.gz,.csv.gz,.sumstats,.sumstats.gz">'
+    + '<input type="file" id="wiz-file" accept=".tsv,.txt,.csv,.gz,.tsv.gz,.txt.gz,.csv.gz,.sumstats,.sumstats.gz,.zip">'
     + '<div class="lx-progress" id="wiz-progress" style="display:none"><div></div></div>'
     + '<p class="hint" id="wiz-upload-status"></p>'
     + '</div>'
-    + '<div class="hint">Tab-, comma- or space-separated text, optionally gzipped, with a header row. Up to '
+    + '<div class="hint">Tab-, comma- or space-separated text, optionally gzipped or zipped (one table per .zip), with a header row. Up to '
     + (me.max_upload_mb || 2048) + ' MB. The file is stored only in this project and deleted with it.</div>'
     + '</div>'
     + '<div class="wiz-field"><label>Annotation and reference panel</label>'
@@ -1586,6 +1705,7 @@ function lociRenderResult(d) {
     + '<tr><td>Candidate SNPs (pre-filter)</td><td>' + (d.candidate_snps || 0).toLocaleString() + '</td></tr>'
     + '<tr><td>Written to</td><td>input/loci.txt</td></tr>'
     + '</table>'
+    + (d.warning ? '<p style="margin-top:0.75rem;font-size:0.85rem;color:#92400e;background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:0.5rem 0.75rem">' + esc(d.warning) + '</p>' : '')
     + '<p style="margin-top:0.75rem;font-size:0.85rem;color:#555">Project config updated. Reprocess to load loci into viewer.</p>'
     + '<div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1rem">'
     + '<button class="btn btn-secondary" onclick="lociClose()">Later</button>'
@@ -2015,7 +2135,7 @@ var gcWiz = { step: 0 }; // Gene Constellation setup wizard state (separate from
 var GC_STEPS = ['Datasets', 'Reference panel & review'];
 
 function gcTitle() {
-  return gcWiz.kind === 'serpent' ? 'Locus Serpent Plot — cross-dataset comparison' : 'Gene Constellation — cross-dataset comparison';
+  return 'Compare datasets — cross-dataset run';
 }
 
 async function openLocusMatrix(kind) {
@@ -2156,7 +2276,7 @@ async function runLocusMatrix() {
   var name = gcWiz.name || '';
 
   var box = document.getElementById('locus-matrix-box');
-  box.innerHTML = '<h3>' + (gcWiz.kind === 'serpent' ? 'Locus Serpent Plot' : 'Gene Constellation') + '</h3>'
+  box.innerHTML = '<h3>Cross-dataset run</h3>'
     + '<div id="lm-progress" style="margin:1rem 0;font-size:0.85rem;color:#475569">Starting…</div>'
     + '<div style="display:flex;justify-content:flex-end">'
     + '<button class="btn btn-secondary" onclick="closeLocusMatrix()">Close</button></div>';
@@ -2197,9 +2317,8 @@ function pollLocusMatrixProgress(jobId) {
         } else {
           el.innerHTML = '<div style="color:#065f46;margin-bottom:0.75rem">Done &mdash; ' + p.loci_found + ' loci found.</div>'
             + '<div style="display:flex;gap:0.5rem">'
-            + (gcWiz.kind === 'serpent'
-                ? '<a class="btn btn-primary" href="serpent_plot.html?job=' + encodeURIComponent(jobId) + '" target="_blank">View Serpent Plot &rarr;</a>'
-                : '<a class="btn btn-primary" href="gene_constellation.html?job=' + encodeURIComponent(jobId) + '" target="_blank">View Constellation &rarr;</a>')
+            + '<a class="btn btn-primary" href="serpent_plot.html?job=' + encodeURIComponent(jobId) + '" target="_blank">Serpent Plot &rarr;</a>'
+            + '<a class="btn btn-primary" href="gene_constellation.html?job=' + encodeURIComponent(jobId) + '" target="_blank">Gene Constellation &rarr;</a>'
             + '<a class="btn btn-secondary" href="' + API + '/api/locus-matrix-export?job=' + encodeURIComponent(jobId) + '">Export Excel</a>'
             + '</div>';
         }
@@ -2550,29 +2669,25 @@ async function loadLocusMatrixJobs() {
   try {
     var jobs = await (await fetch(API + '/api/locus-matrix-jobs')).json();
     jobs = jobs.filter(function(j) { return scope === 'mine' ? j.mine : !j.mine; });
-    var constellation = jobs.filter(function(j) { return j.kind !== 'serpent'; });
-    var serpent = jobs.filter(function(j) { return j.kind === 'serpent'; });
-    renderRunsTable('locus-matrix-tbody', 'locus-matrix-empty', constellation, 'constellation');
-    renderRunsTable('serpent-tbody', 'serpent-empty', serpent, 'serpent');
-    showRunSections(constellation.length, serpent.length);
+    renderRunsTable('runs-tbody', 'runs-empty', jobs);
+    showRunSections(jobs.length);
   } catch (e) {
-    ['locus-matrix-tbody', 'serpent-tbody'].forEach(function(id) { var t = document.getElementById(id); if (t) t.innerHTML = ''; });
-    showRunSections(0, 0);
+    var t = document.getElementById('runs-tbody'); if (t) t.innerHTML = '';
+    showRunSections(0);
   }
 }
 
-function showRunSections(nConstellation, nSerpent) {
-  document.getElementById('runs-constellation').style.display = nConstellation ? '' : 'none';
-  document.getElementById('runs-serpent').style.display = nSerpent ? '' : 'none';
-  document.getElementById('runs-empty-hint').style.display = nConstellation || nSerpent ? 'none' : '';
+function showRunSections(nRuns) {
+  document.getElementById('runs-cross').style.display = nRuns ? '' : 'none';
+  document.getElementById('runs-empty-hint').style.display = nRuns ? 'none' : '';
   document.getElementById('runs-empty-text').textContent = scope === 'mine'
     ? 'You have no cross-dataset runs yet. Compare two or more datasets to find shared loci and genes.'
     : 'No public cross-dataset runs yet.';
 }
 
-// One runs table (Gene Constellation or Locus Serpent Plot). Both views read the same completed job,
-// so every finished run also links to the other view.
-function renderRunsTable(tbodyId, emptyId, jobs, kind) {
+// The cross-dataset runs table. A run is one computation; the Locus Serpent Plot and the Gene Constellation
+// are two views of it, so every finished run links to both.
+function renderRunsTable(tbodyId, emptyId, jobs) {
   var tbody = document.getElementById(tbodyId);
   var empty = document.getElementById(emptyId);
   if (!tbody) return;
@@ -2585,11 +2700,8 @@ function renderRunsTable(tbodyId, emptyId, jobs, kind) {
       ? '<span class="badge badge-error" title="' + escAttr(j.error || '') + '">Error</span>'
       : '<span class="badge badge-proc">Running…</span>';
     var jid = encodeURIComponent(j.job_id);
-    var primary = kind === 'serpent'
-      ? '<a class="btn btn-secondary" href="serpent_plot.html?job=' + jid + '" target="_blank">View</a> '
-        + '<a class="btn btn-secondary" href="gene_constellation.html?job=' + jid + '" target="_blank" title="Same run as a Gene Constellation">Constellation</a> '
-      : '<a class="btn btn-secondary" href="gene_constellation.html?job=' + jid + '" target="_blank">View</a> '
-        + '<a class="btn btn-secondary" href="serpent_plot.html?job=' + jid + '" target="_blank" title="Same run as a Locus Serpent Plot">Serpent</a> ';
+    var primary = '<a class="btn btn-secondary" href="serpent_plot.html?job=' + jid + '" target="_blank">Serpent Plot</a> '
+      + '<a class="btn btn-secondary" href="gene_constellation.html?job=' + jid + '" target="_blank">Gene Constellation</a> ';
     var actions = (j.status === 'done'
       ? primary + '<a class="btn btn-secondary" href="' + API + '/api/locus-matrix-export?job=' + jid + '">Export</a> '
       : '')

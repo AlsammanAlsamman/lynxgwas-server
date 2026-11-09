@@ -2,6 +2,7 @@
 #
 #   cp .env.example .env            # then edit: reference folder, secrets, limits
 #   edit docker/server.docker.properties   # public address, storage limits, reference file names
+#   docker compose --profile setup run --rm setup   # once: download the reference data (GRCh37)
 #   docker compose up -d --build                    # app on 127.0.0.1:8765 (behind your own proxy)
 #   docker compose --profile https up -d --build    # app + Caddy with automatic HTTPS on 80/443
 #
@@ -47,6 +48,27 @@ services:
     logging:
       driver: json-file
       options: { max-size: "50m", max-file: "5" }
+
+  # One-off: download and prepare the reference data into the reference folder (writable here only).
+  #   docker compose run --rm setup                     # GRCh37, the default build
+  #   docker compose run --rm setup setup --yes --build all   # GRCh37 and GRCh38
+  #   docker compose run --rm lynxgwas check            # what each analysis still lacks
+  setup:
+    profiles: [setup]
+    image: lynxgwas-server:local
+    build: .
+    init: true
+    user: "10001:10001"
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    command: ["setup", "--yes"]
+    environment:
+      JAVA_OPTS: "${JAVA_OPTS:--Xmx6g}"
+    volumes:
+      - lynxgwas-data:/data
+      - "${LYNXGWAS_REFERENCE_DIR:?set LYNXGWAS_REFERENCE_DIR in .env}:/reference"
+    networks: [lynxgwas]
 
   caddy:
     profiles: [https]

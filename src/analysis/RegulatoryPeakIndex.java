@@ -76,11 +76,45 @@ public class RegulatoryPeakIndex {
         return DISEASE_TO_EID.get(disease);
     }
 
-    private static final String DEFAULT_DATA_ROOT = "regulatory_data";
+    /**
+     * Same, but the project's own disease name wins when it names a mapped disease ("Rheumatoid
+     * arthritis", "RA"): server project ids are random ("u-..."), so the id prefix alone never maps there.
+     */
+    public static String resolveEid(String projectId, String diseaseName) {
+        String byName = DISEASE_TO_EID.get(diseaseKey(diseaseName));
+        return byName != null ? byName : resolveEid(projectId);
+    }
+
+    /** A free-text disease name as a DISEASE_TO_EID key, or "" if it names none of them. */
+    static String diseaseKey(String name) {
+        if (name == null) return "";
+        String n = name.trim().toLowerCase(java.util.Locale.ROOT);
+        if (DISEASE_TO_EID.containsKey(n)) return n;
+        if (n.contains("schizo")) return "scz";
+        if (n.contains("alzheimer")) return "alz";
+        if (n.contains("type 2 diabetes") || n.contains("type ii diabetes") || n.equals("t2dm")) return "t2d";
+        if (n.contains("coronary")) return "cad";
+        if (n.contains("rheumatoid")) return "ra";
+        if (n.contains("inflammatory bowel") || n.contains("crohn") || n.contains("ulcerative colitis")) return "ibd";
+        if (n.contains("sarcoid")) return "sarco";
+        return "";
+    }
+
+    private static final String DEFAULT_DATA_ROOT = RefBuild.regulatoryRoot("GRCh37");
     private static final RegulatoryPeakIndex INSTANCE = new RegulatoryPeakIndex(DEFAULT_DATA_ROOT);
 
-    /** The process-lifetime shared instance the server uses; tests build their own with a fixture root. */
+    private static final RegulatoryPeakIndex INSTANCE_38 = new RegulatoryPeakIndex(RefBuild.regulatoryRoot("GRCh38"));
+
+    /** The process-lifetime shared instance the server uses (GRCh37); tests build their own with a fixture root. */
     public static RegulatoryPeakIndex instance() { return INSTANCE; }
+
+    /** The shared instance of a build: GRCh38 projects read the peaks lifted at setup. */
+    public static RegulatoryPeakIndex instance(String genomeBuild) { return RefBuild.is38(genomeBuild) ? INSTANCE_38 : INSTANCE; }
+
+    /** The peak file of one tissue and mark in a build. */
+    public static java.io.File peakFile(String genomeBuild, String eid, String mark) {
+        return new java.io.File(RefBuild.regulatoryRoot(genomeBuild) + "/" + eid + "/" + eid + "-" + mark + ".narrowPeak.gz");
+    }
 
     private final String dataRoot;
     // (eid + "|" + mark) -> (normalized chr -> peaks sorted by start). An empty map is cached for a

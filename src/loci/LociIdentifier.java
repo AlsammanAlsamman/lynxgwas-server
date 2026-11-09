@@ -80,7 +80,7 @@ public class LociIdentifier {
         // clump-p2 candidates must survive Stage A, so never filter tighter than clumpP2
         double effectivePreFilterP = Math.max(params.preFilterP, params.clumpP2);
 
-        try (BufferedReader br = new BufferedReader(new FileReader(gwasFile), 1024 * 1024)) {
+        try (BufferedReader br = gwasio.GwasFiles.open(gwasFile)) {
             String header = br.readLine();
             if (header == null) throw new IOException("GWAS file is empty");
             String[] cols = header.trim().split("\t");
@@ -183,6 +183,10 @@ public class LociIdentifier {
         // ── Stage D: PLINK clumping per chromosome ──
         List<ClumpInterval> allClumps;
         String plinkBin = params.plinkBin.isEmpty() ? findPlink() : params.plinkBin;
+        if (plinkBin == null && !params.refPanelPath.isEmpty())
+            // never fall back silently: loci merged by position alone are not the loci the method describes
+            throw new IOException("PLINK was not found, so the loci cannot be clumped against the reference panel. "
+                + "Put PLINK 1.9 in the app's bin/ folder or on PATH (run \"check\" to see what is missing), then identify the loci again.");
 
         if (plinkBin != null && !params.refPanelPath.isEmpty()) {
             if (progress != null) { progress.stepIndex = 4; progress.currentStep = "PLINK clumping"; }
@@ -193,21 +197,13 @@ public class LociIdentifier {
             // No LD information is available here, so members can't be identified beyond
             // the seed SNP itself (unlike the PLINK path, which can pull in suggestive
             // LD-linked neighbors as members).
-            if (plinkBin == null) System.out.println("[Loci] Stage D — PLINK not found, falling back to positional merge");
-            else System.out.println("[Loci] Stage D — no ref panel for clumping, using positional merge");
+            System.out.println("[Loci] Stage D — no ref panel for clumping, using positional merge");
+            if (progress != null) progress.addWarning("No reference panel: loci come from merging genome-wide significant SNPs "
+                + "by position, without LD clumping.");
             if (progress != null) { progress.stepIndex = 4; progress.currentStep = "Positional merge (no PLINK)"; }
             allClumps = new ArrayList<>();
-            for (Map.Entry<String, List<CandidateSnp>> entry : seedsByChr.entrySet()) {
-                String chr = entry.getKey();
-                List<CandidateSnp> snps = entry.getValue();
-                snps.sort(Comparator.comparingLong((CandidateSnp s) -> s.pos));
-                for (CandidateSnp snp : snps) {
-                    ClumpInterval ci = new ClumpInterval();
-                    ci.chr = chr; ci.start = snp.pos; ci.end = snp.pos;
-                    ci.leadSnp = snp.id; ci.leadP = snp.p; ci.memberCount = 1;
-                    allClumps.add(ci);
-                }
-            }
+            for (Map.Entry<String, List<CandidateSnp>> entry : seedsByChr.entrySet())
+                allClumps.addAll(seedIntervals(entry.getKey(), entry.getValue(), params.leadPThreshold));
         }
 
         // ── Stage E: Merge clump intervals within mergeDistanceBp ──
@@ -281,6 +277,21 @@ public class LociIdentifier {
 
     // ── PLINK clumping ─────────────────────────────────────────────────
 
+    /** One interval per seed SNP (p <= leadP), for chromosomes clumping cannot handle; merged later by distance. */
+    static List<ClumpInterval> seedIntervals(String chr, List<CandidateSnp> snps, double leadP) {
+        List<ClumpInterval> out = new ArrayList<>();
+        List<CandidateSnp> sorted = new ArrayList<>(snps);
+        sorted.sort(Comparator.comparingLong((CandidateSnp s) -> s.pos));
+        for (CandidateSnp snp : sorted) {
+            if (snp.p > leadP) continue;
+            ClumpInterval ci = new ClumpInterval();
+            ci.chr = chr; ci.start = snp.pos; ci.end = snp.pos;
+            ci.leadSnp = snp.id; ci.leadP = snp.p; ci.memberCount = 1;
+            out.add(ci);
+        }
+        return out;
+    }
+
     static List<ClumpInterval> runClumping(Map<String, List<CandidateSnp>> byChr,
                                            Params params, String plinkBin,
                                            LociProgress progress) throws IOException {
@@ -343,7 +354,17 @@ public class LociIdentifier {
                 allClumps.addAll(chrClumps);
                 System.out.printf("[Loci] chr%s: %d clumps%n", chr, chrClumps.size());
             } else {
-                System.out.printf("[Loci] chr%s: no .clumped output (no clumps)%n", chr);
+                // No clumps although the chromosome has seeds: its SNPs are not in the reference panel
+                // (chrX with an autosome-only panel). Keep its loci from the seeds alone, and say so.
+                List<ClumpInterval> seeds = seedIntervals(chr, snps, params.leadPThreshold);
+                if (seeds.isEmpty()) {
+                    System.out.printf("[Loci] chr%s: no .clumped output (no clumps)%n", chr);
+                } else {
+                    allClumps.addAll(seeds);
+                    System.out.printf("[Loci] chr%s: not in the reference panel, %d seeds merged by position (no LD clumping)%n", chr, seeds.size());
+                    if (progress != null) progress.addWarning("chr" + chr + " is not in the reference panel: its loci come from merging "
+                        + "genome-wide significant SNPs by position, without LD clumping, and have no LD-based analyses.");
+                }
             }
 
             chromDone++;
@@ -477,26 +498,31 @@ public class LociIdentifier {
 
     // ── Helpers ─────────────────────────────────────────────────────────
 
+    /**
+     * PLINK 1.9 for clumping: the app's own bin/ (next to its classes, or LYNXGWAS_HOME/bin), then the
+     * working folder (bin/, or the folder itself), then PATH. Files are looked up, never started to probe,
+     * because on Windows a program in the working folder cannot be started by bare name.
+     */
+    /** The PLINK 1.9 the app uses, or null. */
+    public static String plinkPath() { return findPlink(); }
+
     static String findPlink() {
-        // The server's own bundled copy first, so an unexpected PATH entry is never preferred
-        for (String path : new String[]{"bin/plink", "bin/plink.exe"}) {
-            if (new File(path).isFile()) return path;
-        }
-        for (String name : new String[]{"plink", "plink2", "plink.exe", "plink2.exe"}) {
-            try {
-                Process p = new ProcessBuilder(name, "--version").redirectErrorStream(true).start();
-                try (BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
-                    while (br.readLine() != null) {}
-                }
-                if (p.waitFor() == 0) return name;
-            } catch (Exception ignored) {}
-        }
-        // Try common Windows paths
-        String[] paths = {
-            "plink/plink.exe", "tools/plink.exe"
-        };
-        for (String path : paths) {
-            if (new File(path).exists()) return path;
+        String exe = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win") ? "plink.exe" : "plink";
+        List<File> dirs = new ArrayList<>();
+        String home = System.getenv("LYNXGWAS_HOME");
+        if (home != null && !home.isEmpty()) dirs.add(new File(home, "bin"));
+        try {
+            File classes = new File(LociIdentifier.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+            dirs.add(classes.isDirectory() ? classes : classes.getParentFile());          // bin/ itself (or the jar's folder)
+            if (classes.getParentFile() != null) dirs.add(new File(classes.getParentFile(), "bin"));
+        } catch (Exception ignored) {}
+        dirs.add(new File("bin"));
+        dirs.add(new File("."));
+        String path = System.getenv("PATH");
+        if (path != null) for (String d : path.split(File.pathSeparator)) if (!d.isEmpty()) dirs.add(new File(d));
+        for (File d : dirs) {
+            File f = new File(d, exe);
+            if (f.isFile()) return f.getAbsolutePath();
         }
         return null;
     }

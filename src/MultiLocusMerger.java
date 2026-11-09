@@ -6,12 +6,15 @@ import java.util.*;
  * keeping only the best (lowest) p-value seen per chr:pos position across
  * all datasets, filtered to p &lt;= pFilter. Writes the merged set to a
  * temp TSV (chrom, pos, p) for loci.LociIdentifier to consume unchanged.
+ * Datasets on different builds are merged in the higher build (GRCh38): the GRCh37 ones' SNPs are lifted
+ * as they are read, and those without a mapping on the same chromosome are left out.
  */
 public class MultiLocusMerger {
 
     public static void merge(List<Config> configs, double pFilter, File outFile,
                               MultiLocusProgress progress) throws IOException {
         Map<String, double[]> best = new HashMap<>(); // "chr:pos" -> {p}
+        String target = MultiLocusScanner.targetBuild(configs);
 
         progress.phase = "merge";
         progress.datasetTotal = configs.size();
@@ -20,7 +23,7 @@ public class MultiLocusMerger {
             Config cfg = configs.get(i);
             progress.datasetIndex = i;
             progress.currentDataset = new File(cfg.outputDir).getName();
-            streamOne(cfg, pFilter, best);
+            streamOne(cfg, pFilter, best, target);
         }
         progress.datasetIndex = configs.size();
 
@@ -36,8 +39,10 @@ public class MultiLocusMerger {
         }
     }
 
-    private static void streamOne(Config cfg, double pFilter, Map<String, double[]> best) throws IOException {
-        try (BufferedReader br = new BufferedReader(new FileReader(cfg.gwasFile), 1024 * 1024)) {
+    private static void streamOne(Config cfg, double pFilter, Map<String, double[]> best, String target) throws IOException {
+        boolean lift = GenomeLiftover.isGrch38(cfg.genomeBuild) != GenomeLiftover.isGrch38(target);
+        long unmapped = 0;
+        try (BufferedReader br = gwasio.GwasFiles.open(cfg.gwasFile)) {
             String header = br.readLine();
             if (header == null) return;
             String[] cols = header.trim().split("\t");
@@ -61,6 +66,13 @@ public class MultiLocusMerger {
 
                 String chr = f[iChr].trim();
                 String pos = f[iPos].trim();
+                if (lift) {
+                    long lp;
+                    try { lp = GenomeLiftover.position(cfg.genomeBuild, target, chr, Long.parseLong(pos)); }
+                    catch (NumberFormatException e) { continue; }
+                    if (lp < 0) { unmapped++; continue; }
+                    pos = String.valueOf(lp);
+                }
                 String key = chr + ":" + pos;
 
                 double[] cur = best.get(key);
@@ -69,5 +81,7 @@ public class MultiLocusMerger {
                 }
             }
         }
+        if (lift) System.out.printf("[MultiLocus] %s lifted %s -> %s for the merge (%,d SNPs without a mapping left out)%n",
+            cfg.outputDir, GenomeLiftover.normalize(cfg.genomeBuild), target, unmapped);
     }
 }

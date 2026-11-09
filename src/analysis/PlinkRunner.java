@@ -16,8 +16,17 @@ import java.util.concurrent.Semaphore;
  */
 public class PlinkRunner {
 
-    /** Memory for a PLINK call that reads the whole reference panel .bim. */
+    /** Memory for a PLINK call that reads the whole reference panel .bim (enough for the 46M-variant GRCh37 panel). */
     public static final int FULL_PANEL_MB = 4096;
+
+    /**
+     * Memory for a PLINK call reading this panel's whole .bim: 3.2 MB per MB of .bim (4 GB held the 1.4 GB .bim of
+     * the GRCh37 panel), never less than FULL_PANEL_MB. The GRCh38 panel (66M variants, 2 GB .bim) needs about 6.5 GB.
+     */
+    public static int fullPanelMb(String bfilePrefix) {
+        long bim = new java.io.File(bfilePrefix + ".bim").length();
+        return (int) Math.max(FULL_PANEL_MB, Math.min(Integer.MAX_VALUE, (long) (bim / 1_048_576.0 * 3.2)));
+    }
     /** Memory for a PLINK call on a per-locus subset. */
     public static final int SUBSET_MB = 2048;
 

@@ -38,23 +38,29 @@ public class LocalServer {
     // GWAS Catalog cross-phenotype lookup — one shared local snapshot for all projects, not
     // per-project config (mirrors config/global.json's reference-panel/SNP-database registry;
     // TODO: move this path into global.json once the snapshot location needs to be user-configurable).
-    private static final String GWAS_CATALOG_TSV = "gwascatalog_data/gwas-catalog-download-associations-alt-full.tsv";
-    private static final String GWAS_CATALOG_IDX_DIR = "gwascatalog_data";
+    private static final String GWAS_CATALOG_REL = "gwascatalog_data/gwas-catalog-download-associations-alt-full.tsv";
+    // the working folder's copy, else the app folder's (where "setup" installs it); its indexes are written next to it
+    private static String GWAS_CATALOG_TSV = GWAS_CATALOG_REL;
+    private static String GWAS_CATALOG_IDX_DIR = "gwascatalog_data";
     private static volatile GwasCatalogLocalIndex gwasCatalogIndex;
     private static volatile String gwasCatalogInitError;
 
     /** Lazily builds/loads the local GWAS Catalog index on first request. Returns null if unavailable. */
     private static GwasCatalogLocalIndex getGwasCatalogIndex() {
-        if (gwasCatalogIndex != null || gwasCatalogInitError != null) return gwasCatalogIndex;
+        if (gwasCatalogIndex != null) return gwasCatalogIndex;
         synchronized (LocalServer.class) {
-            if (gwasCatalogIndex != null || gwasCatalogInitError != null) return gwasCatalogIndex;
-            if (!new File(GWAS_CATALOG_TSV).isFile()) {
-                gwasCatalogInitError = "GWAS Catalog snapshot not found at " + GWAS_CATALOG_TSV +
-                    " — download gwas-catalog-associations_ontology-annotated-full.zip from " +
-                    "ftp.ebi.ac.uk/pub/databases/gwas/releases/latest/ and unzip it there.";
-                System.err.println("[LocalServer] " + gwasCatalogInitError);
+            if (gwasCatalogIndex != null) return gwasCatalogIndex;
+            // a missing file is checked again on every request, so installing it needs no restart
+            File catalog = RefBuild.resolve(GWAS_CATALOG_REL);
+            GWAS_CATALOG_TSV = catalog.getPath();
+            GWAS_CATALOG_IDX_DIR = catalog.getParent() == null ? "gwascatalog_data" : catalog.getParent();
+            if (!catalog.isFile()) {
+                gwasCatalogInitError = "The GWAS Catalog is not installed (" + GWAS_CATALOG_TSV + "): run \"setup\" in the app folder, "
+                    + "or unzip gwas-catalog-associations_ontology-annotated-full.zip from "
+                    + "ftp.ebi.ac.uk/pub/databases/gwas/releases/latest/ into gwascatalog_data/.";
                 return null;
             }
+            if (gwasCatalogInitError != null && gwasCatalogInitError.startsWith("Failed")) return null;
             try {
                 GwasCatalogLocalIndex idx = new GwasCatalogLocalIndex(GWAS_CATALOG_TSV, GWAS_CATALOG_IDX_DIR);
                 if (!new File(GWAS_CATALOG_IDX_DIR, "rsid_index.tsv").isFile() ||
@@ -274,6 +280,8 @@ public class LocalServer {
         route("/api/mvsusie-run-all-progress", this::mvsusieRunAllProgress,    USER, true);
         route("/api/mvsusie-run-all-cancel",   this::mvsusieRunAllCancel,      USER, true);
         route("/api/search",                this::globalSearch,                PUB,  true);
+        route("/api/search/rebuild-index",  this::searchRebuildIndex,          USER, true);
+        route("/api/export-projects-info",  this::exportProjectsInfo,          PUB,  true);
 
         // Accounts, own projects, uploads
         api.register(http);
@@ -358,6 +366,7 @@ public class LocalServer {
                 json.append(",\"pipeline_version\":\"").append(escJ(pm.pipelineVersion)).append('"');
                 json.append(",\"rsid_recovery_status\":\"").append(escJ(pm.rsidRecoveryStatus)).append('"');
                 json.append(",\"rsid_recovery_rate\":\"").append(escJ(pm.rsidRecoveryRate)).append('"');
+                json.append(",\"results_only\":").append(pm.resultsOnly);
             }
 
             // rsID status from project.json (always available, even if config fails)
@@ -403,6 +412,7 @@ public class LocalServer {
         String body = new String(readAll(ex.getRequestBody()), "UTF-8");
         String id = extractStr(body, "id");
         if (!ctx.gate.requireProject(ex, id, true)) return;
+        if (isResultsOnly(id)) { resultsOnlyRefusal(ex); return; }
         File dir = new File("projects", id);
         if (!new File(dir, "config.properties").exists() || !new File(dir, "input/gwas.tsv").isFile()) {
             respond(ex, 400, "application/json",
@@ -492,6 +502,36 @@ public class LocalServer {
     // ── scE2G enhancer-gene links (regulatory_links/sce2g, see Sce2gLinks) ──
 
     private final Set<String> sce2gWarmed = ConcurrentHashMap.newKeySet();
+
+    /** Actions that need a project's GWAS summary statistics, which results-only data (a pack without them) lacks. */
+    private static final Set<String> RESULTS_ONLY_BLOCKED = new HashSet<>(Arrays.asList(
+        "analysis/build-base", "analysis/run", "analysis/run-all", "heritability/run", "sample-size/apply",
+        "update-locus", "create-locus", "split-locus", "delete-locus", "merge-loci", "undo-mutation", "reorder-loci",
+        "qc"));
+
+    private static boolean isResultsOnly(String projectId) {
+        ProjectMetadata pm = ProjectMetadata.load(new File("projects", projectId).getAbsolutePath());
+        return pm != null && pm.resultsOnly;
+    }
+
+    private void resultsOnlyRefusal(HttpExchange ex) throws IOException {
+        respond(ex, 409, "application/json", ("{\"error\":\"This project holds results only: its GWAS summary "
+            + "statistics are not included, so it can be browsed but not re-run. Upload the summary statistics "
+            + "(Edit on the home page) to re-run analyses.\",\"results_only\":true}").getBytes("UTF-8"));
+    }
+
+    /** Genome build of a project (GRCh37 when unset or unreadable). */
+    private static String buildOf(String projectId) {
+        try { return Config.loadFromProject(new File("projects", projectId).getAbsolutePath()).genomeBuild; }
+        catch (Exception e) { return "GRCh37"; }
+    }
+
+    /** Reference epigenome of a project: from its disease name when set, else from its id prefix. */
+    private static String eidFor(String projectId) {
+        String disease = null;
+        try { disease = Config.loadFromProject(new File("projects", projectId).getAbsolutePath()).diseaseName; } catch (Exception ignored) {}
+        return RegulatoryPeakIndex.resolveEid(projectId, disease);
+    }
 
     /** Opening a project's viewer loads its default scE2G cell types in the background, so its first locus is quick. */
     private void warmSce2g(String projectId, String projectDir) {
@@ -778,6 +818,7 @@ public class LocalServer {
         // GETs that only fill caches on disk (l2g, qc) are allowed on public datasets.
         boolean isRead = "GET".equalsIgnoreCase(ex.getRequestMethod()) || "HEAD".equalsIgnoreCase(ex.getRequestMethod());
         if (!ctx.gate.requireProject(ex, projectId, !isRead)) return;
+        if (RESULTS_ONLY_BLOCKED.contains(action) && isResultsOnly(projectId)) { resultsOnlyRefusal(ex); return; }
 
         String projectDir = new File("projects", projectId).getAbsolutePath();
         String dataDir = projectDir + "/data";
@@ -1171,7 +1212,7 @@ public class LocalServer {
         String paddedStartStr = extractStr(locusJson, "padded_start");
         String paddedEndStr = extractStr(locusJson, "padded_end");
 
-        String eid = RegulatoryPeakIndex.resolveEid(projectId);
+        String eid = eidFor(projectId);
         String tissue = eid == null ? null : RegulatoryPeakIndex.EID_TO_TISSUE.get(eid);
 
         StringBuilder json = new StringBuilder("{");
@@ -1188,7 +1229,7 @@ public class LocalServer {
         }
 
         if (eid != null && chr != null && start >= 0 && end >= start) {
-            RegulatoryPeakIndex idx = RegulatoryPeakIndex.instance();
+            RegulatoryPeakIndex idx = RegulatoryPeakIndex.instance(buildOf(projectId));
             for (int mi = 0; mi < RegulatoryPeakIndex.MARKS.length; mi++) {
                 String mark = RegulatoryPeakIndex.MARKS[mi];
                 if (mi > 0) json.append(",");
@@ -1230,7 +1271,7 @@ public class LocalServer {
             return;
         }
 
-        String eid = RegulatoryPeakIndex.resolveEid(projectId);
+        String eid = eidFor(projectId);
         String tissue = eid == null ? null : RegulatoryPeakIndex.EID_TO_TISSUE.get(eid);
 
         // The scan reads the whole GWAS file (a minute or more for large files), so the result is cached
@@ -1241,6 +1282,13 @@ public class LocalServer {
         File cacheFile = new File(new File(cfg.outputDir), "regulatory_enrichment.json");
         File cacheKeyFile = new File(new File(cfg.outputDir), "regulatory_enrichment.key");
         try {
+            // results-only data: no summary statistics to key against, so the saved result at the same tissue and
+            // threshold is the result
+            String savedKey = cacheKeyFile.isFile() ? new String(Files.readAllBytes(cacheKeyFile.toPath()), "UTF-8").trim() : "";
+            if (cacheFile.isFile() && isResultsOnly(projectId) && savedKey.startsWith(eid + "|" + threshold + "|")) {
+                respond(ex, 200, "application/json", Files.readAllBytes(cacheFile.toPath()));
+                return;
+            }
             if (cacheFile.isFile() && cacheKeyFile.isFile()
                     && cacheKey.equals(new String(Files.readAllBytes(cacheKeyFile.toPath()), "UTF-8").trim())) {
                 respond(ex, 200, "application/json", Files.readAllBytes(cacheFile.toPath()));
@@ -1255,6 +1303,18 @@ public class LocalServer {
         List<RegulatoryEnrichmentAnalyzer.SnpPos> foreground = new ArrayList<>();
         List<RegulatoryEnrichmentAnalyzer.SnpPos> background = new ArrayList<>();
 
+        // without the tissue's peak files every overlap counts as zero and the test reports nonsense
+        if (eid != null) {
+            for (String mark : RegulatoryPeakIndex.MARKS) {
+                if (!RegulatoryPeakIndex.peakFile(cfg.genomeBuild, eid, mark).isFile()) {
+                    respond(ex, 404, "application/json", ("{\"error\":\"The " + RefBuild.name(cfg.genomeBuild) + " Roadmap histone peaks for " + escJ(eid)
+                        + " (" + escJ(mark) + ") are not installed, so the enrichment cannot be computed: run setup"
+                        + (RefBuild.is38(cfg.genomeBuild) ? " --build 38" : "") + ".\"}").getBytes("UTF-8"));
+                    return;
+                }
+            }
+        }
+
         if (eid != null) {
             File gwasFile = new File(cfg.gwasFile);
             if (!gwasFile.isFile()) {
@@ -1263,7 +1323,7 @@ public class LocalServer {
                 return;
             }
             double sigThreshold = threshold;
-            try (BufferedReader br = new BufferedReader(new FileReader(gwasFile), 1 << 20)) {
+            try (BufferedReader br = gwasio.GwasFiles.open(gwasFile)) {
                 String header = br.readLine();
                 if (header != null) {
                     String[] cols = header.trim().split("\t");
@@ -1293,7 +1353,7 @@ public class LocalServer {
         }
 
         RegulatoryEnrichmentAnalyzer.Result result = RegulatoryEnrichmentAnalyzer.run(
-            eid, tissue, threshold, foreground, background, RegulatoryPeakIndex.instance());
+            eid, tissue, threshold, foreground, background, RegulatoryPeakIndex.instance(cfg.genomeBuild));
         byte[] json = result.toJson().getBytes("UTF-8");
         if (eid != null) {
             try {
@@ -2298,12 +2358,10 @@ public class LocalServer {
         pt.update("Annotating SNPs", 2, 4);
         GffParser gff = cfg.gff3File != null && new File(cfg.gff3File).isFile() ? gffFuture(new File(cfg.gff3File).getAbsolutePath()).get() : null;
         List<Gene> genes = gff == null ? Collections.emptyList() : gff.overlapping(chr, Math.max(0, locus.start - 1_000_000), locus.end + 1_000_000);
-        String eid = RegulatoryPeakIndex.resolveEid(projectId);
-        RegulatoryPeakIndex peaks = RegulatoryPeakIndex.instance();
-        File ldDir = GenomeHeritability.ldscDir();
-        String caddEnv = System.getenv("LYNXGWAS_CADD");   // CADD v1.6 GRCh37 prescored SNVs (tabix); optional
-        File cadd = caddEnv != null && !caddEnv.isEmpty() ? new File(caddEnv)
-            : new File(SusieAdapter.appRoot(), "resources/cadd/gnomad.genomes.r2.1.1.snv.tsv.gz");
+        String eid = eidFor(projectId);
+        RegulatoryPeakIndex peaks = RegulatoryPeakIndex.instance(cfg.genomeBuild);
+        File ldDir = RefBuild.ldscDir(cfg.genomeBuild);
+        File cadd = RefBuild.cadd(cfg.genomeBuild);   // CADD v1.6 prescored SNVs of the project's build (tabix); optional
         long lo = Long.MAX_VALUE, hi = 0;
         for (String[] s : snps) { long p = Long.parseLong(s[1]); lo = Math.min(lo, p); hi = Math.max(hi, p); }
         Map<String, Double> caddMap = SnpRankModel.caddRegion(cadd, chr, lo, hi);
@@ -2563,7 +2621,7 @@ public class LocalServer {
         ldscStatus.put(projectId, "starting");
         String refused = ctx.jobs.start(SecurityGate.userId(ex), "ldsc-" + projectId, () -> {
             try {
-                GenomeHeritability.run(cfg, GenomeHeritability.ldscDir(), (phase, step) -> ldscStatus.put(projectId, phase));
+                GenomeHeritability.run(cfg, RefBuild.ldscDir(cfg.genomeBuild), (phase, step) -> ldscStatus.put(projectId, phase));
                 ldscStatus.put(projectId, "done");
                 Files.deleteIfExists(ldscErrorFile(cfg).toPath());
             } catch (Exception e) {
@@ -2590,7 +2648,7 @@ public class LocalServer {
         if (f.isFile()) {
             String j = new String(Files.readAllBytes(f.toPath()), "UTF-8");
             Map<String, Object> m = MiniJson.asObject(MiniJson.parse(j));
-            if (SampleSizeCheck.key(cfg).replace("\\", "/").replace("\"", "'").equals(MiniJson.getStr(m, "key", ""))) {
+            if (isResultsOnly(projectId) || SampleSizeCheck.key(cfg).replace("\\", "/").replace("\"", "'").equals(MiniJson.getStr(m, "key", ""))) {
                 respond(ex, 200, "application/json", j.getBytes("UTF-8"));
                 return;
             }
@@ -2600,7 +2658,7 @@ public class LocalServer {
             return;
         }
         try {
-            respond(ex, 200, "application/json", SampleSizeCheck.run(cfg, GenomeHeritability.ldscDir()).getBytes("UTF-8"));
+            respond(ex, 200, "application/json", SampleSizeCheck.run(cfg, RefBuild.ldscDir(cfg.genomeBuild)).getBytes("UTF-8"));
         } catch (Exception e) {
             respond(ex, 422, "application/json", ("{\"error\":\"" + escJ(String.valueOf(e.getMessage())) + "\"}").getBytes("UTF-8"));
         }
@@ -3856,6 +3914,15 @@ public class LocalServer {
                 return;
             }
         }
+        // Datasets on different builds are analysed together in the higher build (GRCh38); the reference
+        // panel must be of that build, since the run clumps and computes LD in it
+        String runBuild = MultiLocusScanner.targetBuild(configs);
+        if (panel.build != null && !panel.build.isEmpty() && GenomeLiftover.isGrch38(panel.build.replace("hg38", "GRCh38")) != GenomeLiftover.isGrch38(runBuild)) {
+            respond(ex, 400, "application/json", ("{\"error\":\"These datasets are analysed in " + runBuild
+                + (GenomeLiftover.isGrch38(runBuild) ? " (any GRCh37 dataset among them is lifted to GRCh38)" : "")
+                + ": choose a " + runBuild + " reference panel.\"}").getBytes("UTF-8"));
+            return;
+        }
 
         List<String> datasetNames = new ArrayList<>();
         for (String pid : projectIds) {
@@ -3900,7 +3967,9 @@ public class LocalServer {
                     mergedFile.getAbsolutePath(), "chrom", "pos", "p", "", params, progress.identifyProgress);
                 progress.lociFound = loci.size();
 
-                GffParser gff = sharedGff(configs.get(0));
+                Config gffFrom = configs.get(0);   // gene annotation in the run's build
+                for (Config c : configs) if (GenomeLiftover.isGrch38(c.genomeBuild) == GenomeLiftover.isGrch38(runBuild)) { gffFrom = c; break; }
+                GffParser gff = sharedGff(gffFrom);
 
                 MultiLocusResult result = MultiLocusScanner.scan(configs, finalProjectIds, loci, gff, progress);
                 result.name = finalJobName;
@@ -4089,45 +4158,10 @@ public class LocalServer {
         List<LocusMatrixJobMeta> loaded = new ArrayList<>();
         int ok = 0, failed = 0;
         for (File dir : dirs) {
-            File metaFile = new File(dir, "job.json");
-            if (!metaFile.isFile()) continue; // runs from before persistence existed: nothing to restore
+            if (!new File(dir, "job.json").isFile()) continue; // runs from before persistence existed: nothing to restore
             try {
-                Map<String, Object> m = MiniJson.asObject(MiniJson.parse(
-                    new String(Files.readAllBytes(metaFile.toPath()), java.nio.charset.StandardCharsets.UTF_8)));
-                LocusMatrixJobMeta meta = new LocusMatrixJobMeta();
-                meta.jobId = MiniJson.getStr(m, "job_id", dir.getName());
-                meta.name = MiniJson.getStr(m, "name", meta.jobId);
-                meta.kind = MiniJson.getStr(m, "kind", "constellation");
-                meta.projectIds = new ArrayList<>();
-                meta.datasetNames = new ArrayList<>();
-                if (m.get("project_ids") instanceof List) for (Object x : MiniJson.asArray(m.get("project_ids"))) meta.projectIds.add(String.valueOf(x));
-                if (m.get("dataset_names") instanceof List) for (Object x : MiniJson.asArray(m.get("dataset_names"))) meta.datasetNames.add(String.valueOf(x));
-                meta.refPanelId = MiniJson.getStr(m, "ref_panel_id", "");
-                meta.refPanelLabel = MiniJson.getStr(m, "ref_panel_label", "");
-                meta.createdAt = MiniJson.getStr(m, "created_at", "");
-                Object owner = m.get("owner_id");
-                meta.ownerId = owner instanceof String && !((String) owner).isEmpty() ? (String) owner : null;
-                String status = MiniJson.getStr(m, "status", "");
-
-                MultiLocusProgress progress = new MultiLocusProgress();
-                progress.done = true;
-                File resultFile = new File(dir, "result.json");
-                if ("done".equals(status) && resultFile.isFile()) {
-                    MultiLocusResult result = MultiLocusResult.fromJson(
-                        new String(Files.readAllBytes(resultFile.toPath()), java.nio.charset.StandardCharsets.UTF_8));
-                    locusMatrixJobs.put(meta.jobId, result);
-                    progress.phase = "done";
-                    progress.lociFound = result.loci.size();
-                    ok++;
-                } else {
-                    progress.phase = "error";
-                    progress.error = "done".equals(status) ? "Saved result is missing (result.json)."
-                        : "error".equals(status) ? MiniJson.getStr(m, "error", "Run failed.")
-                        : "Interrupted: LYNXgwas stopped before this run finished. Delete it and run again.";
-                    failed++;
-                }
-                locusMatrixJobMeta.put(meta.jobId, meta);
-                locusMatrixJobProgress.put(meta.jobId, progress);
+                LocusMatrixJobMeta meta = restoreJob(dir);
+                if ("done".equals(locusMatrixJobProgress.get(meta.jobId).phase)) ok++; else failed++;
                 loaded.add(meta);
             } catch (Exception e) {
                 failed++;
@@ -4138,6 +4172,59 @@ public class LocalServer {
         for (LocusMatrixJobMeta meta : loaded) locusMatrixJobOrder.add(meta.jobId);
         if (!loaded.isEmpty())
             System.out.printf("Restored %d saved cross-dataset run(s) (%d complete, %d failed/interrupted)%n", loaded.size(), ok, failed);
+    }
+
+    /** Runs and joint fine-mapping results an import just moved into output/: listed without a restart. */
+    public void adoptImportedRuns(List<String> jobIds) {
+        for (String id : jobIds) {
+            try {
+                restoreJob(new File(MULTI_LOCUS_DIR, id));
+                locusMatrixJobOrder.add(id);
+            } catch (Exception e) {
+                System.err.printf("[LocusMatrix] Could not load imported run '%s': %s%n", id, e.getMessage());
+            }
+        }
+        mvsusieIndexed = false;
+    }
+
+    /** Reads one saved run (job.json, result.json) into the job maps. */
+    private LocusMatrixJobMeta restoreJob(File dir) throws Exception {
+        File metaFile = new File(dir, "job.json");
+        Map<String, Object> m = MiniJson.asObject(MiniJson.parse(
+            new String(Files.readAllBytes(metaFile.toPath()), java.nio.charset.StandardCharsets.UTF_8)));
+        LocusMatrixJobMeta meta = new LocusMatrixJobMeta();
+        meta.jobId = MiniJson.getStr(m, "job_id", dir.getName());
+        meta.name = MiniJson.getStr(m, "name", meta.jobId);
+        meta.kind = MiniJson.getStr(m, "kind", "constellation");
+        meta.projectIds = new ArrayList<>();
+        meta.datasetNames = new ArrayList<>();
+        if (m.get("project_ids") instanceof List) for (Object x : MiniJson.asArray(m.get("project_ids"))) meta.projectIds.add(String.valueOf(x));
+        if (m.get("dataset_names") instanceof List) for (Object x : MiniJson.asArray(m.get("dataset_names"))) meta.datasetNames.add(String.valueOf(x));
+        meta.refPanelId = MiniJson.getStr(m, "ref_panel_id", "");
+        meta.refPanelLabel = MiniJson.getStr(m, "ref_panel_label", "");
+        meta.createdAt = MiniJson.getStr(m, "created_at", "");
+        Object owner = m.get("owner_id");
+        meta.ownerId = owner instanceof String && !((String) owner).isEmpty() ? (String) owner : null;
+        String status = MiniJson.getStr(m, "status", "");
+
+        MultiLocusProgress progress = new MultiLocusProgress();
+        progress.done = true;
+        File resultFile = new File(dir, "result.json");
+        if ("done".equals(status) && resultFile.isFile()) {
+            MultiLocusResult result = MultiLocusResult.fromJson(
+                new String(Files.readAllBytes(resultFile.toPath()), java.nio.charset.StandardCharsets.UTF_8));
+            locusMatrixJobs.put(meta.jobId, result);
+            progress.phase = "done";
+            progress.lociFound = result.loci.size();
+        } else {
+            progress.phase = "error";
+            progress.error = "done".equals(status) ? "Saved result is missing (result.json)."
+                : "error".equals(status) ? MiniJson.getStr(m, "error", "Run failed.")
+                : "Interrupted: LYNXgwas stopped before this run finished. Delete it and run again.";
+        }
+        locusMatrixJobMeta.put(meta.jobId, meta);
+        locusMatrixJobProgress.put(meta.jobId, progress);
+        return meta;
     }
 
     // GET /api/serpent-plot?job=<jobId> — Locus Serpent Plot view + category analysis, derived from an
@@ -4398,6 +4485,95 @@ public class LocalServer {
     // POST /api/search/rebuild-index — forces a fresh build, returns the same summary stats logged
     // to stdout during the build (project/loci/SNP counts, build time).
     /** Daily background rebuild of the search index (public datasets change rarely). */
+    private volatile long lastIndexRebuild = 0;
+
+    // POST /api/search/rebuild-index: rebuild now (the server also does it daily), at most every 10 minutes
+    private void searchRebuildIndex(HttpExchange ex) throws IOException {
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) { SecurityGate.deny(ex, 405, "POST required"); return; }
+        long now = System.currentTimeMillis();
+        synchronized (this) {
+            if (now - lastIndexRebuild < 10 * 60_000L) {
+                SecurityGate.deny(ex, 429, "The search index was rebuilt in the last 10 minutes; your projects are in it."); return;
+            }
+            lastIndexRebuild = now;
+        }
+        String refused = ctx.jobs.start(SecurityGate.userId(ex), "search-index", this::rebuildSearchIndex);
+        if (refused != null) { lastIndexRebuild = 0; SecurityGate.deny(ex, 429, refused); return; }
+        respond(ex, 202, "application/json", "{\"started\":true}".getBytes());
+    }
+
+    // GET /api/export-projects-info?scope=public|mine: one sheet, one row per dataset (no server paths)
+    private void exportProjectsInfo(HttpExchange ex) throws IOException {
+        String scope = queryParam(ex, "scope");
+        String userId = SecurityGate.userId(ex);
+        List<String> ids = new ArrayList<>();
+        if ("mine".equals(scope)) {
+            if (userId == null) { SecurityGate.deny(ex, 401, "Open My projects first: it creates your private workspace."); return; }
+            for (ProjectRegistry.Entry e : ctx.registry.ownedBy(userId)) ids.add(e.projectId);
+        } else {
+            ids.addAll(ctx.registry.publicIds());
+        }
+        Collections.sort(ids);
+        try {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            try (XlsxWriter xlsx = new XlsxWriter(baos)) {
+                XlsxWriter.Sheet s = xlsx.addSheet("Datasets").freezeHeader().autoFilter();
+                s.addRow("Dataset", "Disease", "Status", "Loci", "SNPs", "Cases", "Controls", "Total N", "Effective N",
+                    "Trait", "Prevalence", "Ancestry", "Genome build", "Reference panel", "rsID column",
+                    "LDSC h2 (observed)", "LDSC h2 SE", "LDSC intercept", "Results only", "Last processed");
+                for (String id : ids) {
+                    File dir = new File("projects", id);
+                    String d = dir.getAbsolutePath();
+                    ProjectMetadata pm = ProjectMetadata.load(d);
+                    Config cfg = null;
+                    String status;
+                    try {
+                        cfg = Config.loadFromProject(d);
+                        status = pm != null && pm.resultsOnly ? "results only"
+                            : ProjectMetadata.checkStaleness(d, cfg) == ProjectMetadata.StaleReason.NOT_STALE ? "up to date" : "needs processing";
+                    } catch (Exception e) {
+                        status = "error";
+                    }
+                    Map<String, Object> h = new HashMap<>();
+                    File hf = new File(dir, "heritability/ldsc.json");
+                    if (hf.isFile()) {
+                        try { h = MiniJson.asObject(MiniJson.parse(new String(Files.readAllBytes(hf.toPath()), "UTF-8"))); } catch (Exception ignored) {}
+                    }
+                    s.addRow(
+                        pm != null && !pm.name.isEmpty() ? pm.name : id,
+                        cfg != null ? GeneConstellationBuilder.diseaseGroupOf(id, cfg.diseaseName) : "",
+                        status,
+                        pm != null ? pm.lociCount : 0,
+                        pm != null ? pm.totalSnps : 0,
+                        cfg != null ? cfg.nCases : 0,
+                        cfg != null ? cfg.nControls : 0,
+                        cfg != null ? cfg.sampleN : 0,
+                        cfg != null ? cfg.analysisN() : 0,
+                        cfg != null ? cfg.traitType : "",
+                        cfg != null ? cfg.prevalence : 0,
+                        cfg != null ? cfg.ancestry : "",
+                        cfg != null ? cfg.genomeBuild : "",
+                        cfg != null ? cfg.refPanelPopulation : "",
+                        (pm != null && pm.rsidColumnPresent) || (cfg != null && cfg.colRsid != null && !cfg.colRsid.isEmpty()),
+                        h.get("h2") instanceof Number ? h.get("h2") : "",
+                        h.get("h2_se") instanceof Number ? h.get("h2_se") : "",
+                        h.get("intercept") instanceof Number ? h.get("intercept") : "",
+                        pm != null && pm.resultsOnly,
+                        pm != null ? pm.lastProcessed : "");
+                }
+                xlsx.finish();
+            }
+            byte[] bytes = baos.toByteArray();
+            ex.getResponseHeaders().set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            ex.getResponseHeaders().set("Content-Disposition", "attachment; filename=\"lynxgwas_datasets.xlsx\"");
+            ex.sendResponseHeaders(200, bytes.length);
+            try (OutputStream os = ex.getResponseBody()) { os.write(bytes); }
+        } catch (Exception e) {
+            System.err.println("[Info] export failed: " + e);
+            respond(ex, 500, "application/json", "{\"error\":\"Could not build the table\"}".getBytes());
+        }
+    }
+
     public void rebuildSearchIndex() {
         GlobalSearchIndex.forceRebuild(new File("projects"), GlobalSearchIndex.DEFAULT_THRESHOLD);
     }
@@ -4982,11 +5158,19 @@ public class LocalServer {
                 if (!readable.contains(pid)) continue;
                 ProjectState ps = ensureProjectState(pid, new File("projects", pid).getAbsolutePath());
                 if (ps == null || ps.loci == null) { excluded.add(new String[]{pid, "project not available"}); continue; }
+                // a dataset on the other build (lifted for this run) is matched in its own coordinates
+                long rs = row.start, re = row.end, bp = st.bestPos;
+                if (GenomeLiftover.isGrch38(ps.config.genomeBuild) != GenomeLiftover.isGrch38(result.genomeBuild)) {
+                    GenomeLiftover.Result back = GenomeLiftover.convert(result.genomeBuild, ps.config.genomeBuild, row.chr, row.start, row.end);
+                    if (!back.ok) { excluded.add(new String[]{pid, "this region has no " + GenomeLiftover.normalize(ps.config.genomeBuild) + " position"}); continue; }
+                    rs = back.start; re = back.end;
+                    bp = GenomeLiftover.position(result.genomeBuild, ps.config.genomeBuild, row.chr, st.bestPos);
+                }
                 Locus own = null;
                 for (Locus l : ps.loci)
-                    if (l.chr.equals(row.chr) && l.start <= row.end && l.end >= row.start
+                    if (l.chr.equals(row.chr) && l.start <= re && l.end >= rs
                             && !BaseStepPipeline.overlapsMhc(l, ps.config.genomeBuild)
-                            && (own == null || (l.start <= st.bestPos && st.bestPos <= l.end))) own = l;
+                            && (own == null || (l.start <= bp && bp <= l.end))) own = l;
                 if (own == null) { excluded.add(new String[]{pid, "no fine-mappable locus of its own here (MHC or not identified)"}); continue; }
                 File harm = new File(BaseStepPipeline.analysisDir(ps.config, own), "harmonized/harmonized_gwas.tsv");
                 if (!harm.isFile()) { excluded.add(new String[]{pid, "inputs not built for this locus (run Analyze first)"}); continue; }
@@ -4996,7 +5180,7 @@ public class LocalServer {
                 }
                 Cand c = new Cand();
                 c.pid = pid; c.disease = diseaseOf(result, pid); c.cfg = ps.config; c.locus = own; c.harmonized = harm; c.su = su;
-                c.p = Double.isNaN(st.bestP) ? 1 : st.bestP; c.pos = st.bestPos; c.cs = susieCredibleSets(ps.config, own, su, row.chr + ":" + st.bestPos);
+                c.p = Double.isNaN(st.bestP) ? 1 : st.bestP; c.pos = st.bestPos; c.cs = susieCredibleSets(ps.config, own, su, row.chr + ":" + bp);
                 eligible.add(c);
             }
 
@@ -5065,7 +5249,16 @@ public class LocalServer {
             m.put("chr", row.chr);
             m.put("from", from);
             m.put("to", to);
-            m.put("ref_panel", lead.cfg.refPanelPath);
+            String panelPath = lead.cfg.refPanelPath;
+            boolean mixed = false;
+            for (Cand c : chosen) mixed |= GenomeLiftover.isGrch38(c.cfg.genomeBuild) != GenomeLiftover.isGrch38(result.genomeBuild);
+            if (mixed) {   // the run's own panel, in its build (the lead may be a lifted dataset)
+                GlobalConfig.RefPanel rp = GlobalConfig.load().findPanel(result.refPanelId);
+                if (rp == null || !rp.isValid()) throw new IOException("The run's reference panel (" + result.refPanelId + ") is not available");
+                panelPath = rp.plinkPath;
+            }
+            m.put("ref_panel", panelPath);
+            m.put("plink_memory_mb", PlinkRunner.fullPanelMb(panelPath));   // PLINK reads the whole panel .bim
             m.put("plink", new File(plink).getAbsolutePath());
             m.put("ukbb_dir", SusieAdapter.ukbbLdDir());
             m.put("ukbb_script", new File(SusieAdapter.appRoot(), "scripts/ukbb_ld.py").getAbsolutePath());
@@ -5078,12 +5271,17 @@ public class LocalServer {
                 Map<String, Object> d = new LinkedHashMap<>();
                 d.put("id", c.pid); d.put("disease", c.disease); d.put("N", c.cfg.analysisN()); d.put("p", c.p);
                 Map<String, Object> gw = new LinkedHashMap<>();
-                gw.put("file", c.cfg.gwasFile.replace("\\", "/")); gw.put("chr", c.cfg.colChr); gw.put("pos", c.cfg.colPos);
+                boolean liftThis = GenomeLiftover.isGrch38(c.cfg.genomeBuild) != GenomeLiftover.isGrch38(result.genomeBuild);
+                File gwasIn = liftThis ? liftedNullSample(c.pid, c.cfg, result.genomeBuild) : new File(c.cfg.gwasFile);
+                gw.put("file", gwasIn.getAbsolutePath().replace("\\", "/")); gw.put("chr", c.cfg.colChr); gw.put("pos", c.cfg.colPos);
                 gw.put("ea", c.cfg.colEa); gw.put("nea", c.cfg.colNea); gw.put("se", c.cfg.colSe);
                 gw.put("beta", c.cfg.colBeta); gw.put("or", c.cfg.colOr);
                 d.put("gwas", gw);
-                d.put("null_cache", mvsusieNullCache(c.pid, c.cfg).getAbsolutePath().replace("\\", "/"));
-                d.put("files", new ArrayList<Object>(Collections.singletonList(c.harmonized.getAbsolutePath().replace("\\", "/"))));
+                File nullCache = mvsusieNullCache(c.pid, c.cfg);
+                if (liftThis) nullCache = new File(nullCache.getParentFile(), c.pid + "." + GenomeLiftover.normalize(result.genomeBuild) + ".rds");
+                d.put("null_cache", nullCache.getAbsolutePath().replace("\\", "/"));
+                File harmIn = liftThis ? liftedHarmonized(c.harmonized, c.cfg.genomeBuild, result.genomeBuild, new File(work, c.pid + ".harmonized.tsv")) : c.harmonized;
+                d.put("files", new ArrayList<Object>(Collections.singletonList(harmIn.getAbsolutePath().replace("\\", "/"))));
                 ds.add(d);
             }
             m.put("datasets", ds);
@@ -5129,6 +5327,60 @@ public class LocalServer {
     }
 
     /** Where a dataset's genome-wide null z sample is cached (rebuilt by R when the GWAS file changes). */
+    /** A dataset's harmonised locus file with its positions in another build (rows without a mapping left out). */
+    private static File liftedHarmonized(File harmonized, String from, String to, File out) throws IOException {
+        try (BufferedReader br = new BufferedReader(new FileReader(harmonized));
+             PrintWriter pw = new PrintWriter(new BufferedWriter(new FileWriter(out)))) {
+            String header = br.readLine();
+            if (header == null) return out;
+            List<String> h = Arrays.asList(header.split("\t", -1));
+            int iChr = h.indexOf("chr"), iPos = h.indexOf("pos");
+            pw.println(header);
+            String line;
+            while ((line = br.readLine()) != null) {
+                String[] f = line.split("\t", -1);
+                if (iChr < 0 || iPos < 0 || f.length <= Math.max(iChr, iPos)) continue;
+                long lp;
+                try { lp = GenomeLiftover.position(from, to, f[iChr], Long.parseLong(f[iPos])); } catch (NumberFormatException e) { continue; }
+                if (lp < 0) continue;
+                f[iPos] = String.valueOf(lp);
+                pw.println(String.join("\t", f));
+            }
+        }
+        return out;
+    }
+
+    /**
+     * The SNPs of a dataset that mvsusie_run.R samples for the null correlation (position % 53 == 7), with
+     * positions lifted to another build, so they meet the other datasets' SNPs. Cached next to the null z.
+     */
+    private File liftedNullSample(String pid, Config cfg, String toBuild) throws IOException {
+        File out = new File("output/mvsusie_null_z/" + pid + "." + GenomeLiftover.normalize(toBuild) + ".gwas.tsv").getAbsoluteFile();
+        File src = new File(cfg.gwasFile);
+        if (out.isFile() && out.lastModified() > src.lastModified()) return out;
+        out.getParentFile().mkdirs();
+        File tmp = new File(out.getPath() + ".part");
+        try (BufferedReader br = gwasio.GwasFiles.open(src); PrintWriter pw = new PrintWriter(new BufferedWriter(new FileWriter(tmp)))) {
+            String header = br.readLine();
+            if (header == null) throw new IOException("empty GWAS file");
+            String[] cols = header.split("\t", -1);
+            int iChr = GwasParser.colIdx(cols, cfg.colChr), iPos = GwasParser.colIdx(cols, cfg.colPos);
+            pw.println(header);
+            String line;
+            while ((line = br.readLine()) != null) {
+                String[] f = line.split("\t", -1);
+                if (f.length <= Math.max(iChr, iPos)) continue;
+                long lp;
+                try { lp = GenomeLiftover.position(cfg.genomeBuild, toBuild, f[iChr], Long.parseLong(f[iPos].trim())); } catch (NumberFormatException e) { continue; }
+                if (lp < 0 || lp % 53 != 7) continue;
+                f[iPos] = String.valueOf(lp);
+                pw.println(String.join("\t", f));
+            }
+        }
+        Files.move(tmp.toPath(), out.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        return out;
+    }
+
     private File mvsusieNullCache(String pid, Config cfg) {
         return new File("output/mvsusie_null_z/" + pid + ".rds").getAbsoluteFile();
     }

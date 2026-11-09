@@ -13,7 +13,7 @@ import java.util.*;
  *   - a same-build position match
  *   - a GRCh37->GRCh38 position match via real liftover (skipped, with a clear printed message, if
  *     resources/hg19ToHg38.over.chain isn't present on this machine)
- *   - the unsupported GRCh38->GRCh37 direction returning the explicit "not compared" flag
+ *   - GRCh38->GRCh37 matches through the hg38ToHg19 chain (skipped when the chain is not installed)
  *   - threshold filtering (a SNP below genome-wide significance must never appear in results)
  *
  * Fixture layout:
@@ -112,19 +112,19 @@ public class GlobalSearchIndexTest {
                 if (!lifted.hits.isEmpty()) check("lifted hit is rs429358", lifted.hits.get(0).snpId, "rs429358");
             }
 
-            // ── Unsupported GRCh38->GRCh37 direction ───────────────────────
-            GlobalSearchIndex.Result unsupported = idx.searchPosition("2", 100000, "GRCh37");
-            check("GRCh38 project's SNP never appears as a false hit under a GRCh37 query",
-                containsProject(unsupported.hits, "proj_c"), false);
-            boolean flagged = false;
-            for (GlobalSearchIndex.NotCompared nc : unsupported.notCompared) {
-                if ("proj_c".equals(nc.projectId)) {
-                    flagged = true;
-                    check("proj_c not-compared reason mentions liftover being unavailable",
-                        nc.reason != null && nc.reason.toLowerCase(Locale.ROOT).contains("liftover unavailable"), true);
+            // ── GRCh38->GRCh37 position match via the hg38ToHg19 chain ────
+            if (!new File("resources/hg38ToHg19.over.chain").isFile()) {
+                System.out.println("SKIP: GRCh38->GRCh37 liftover sub-test — resources/hg38ToHg19.over.chain not present (run setup).");
+            } else {
+                GenomeLiftover.Result down = GenomeLiftover.toGRCh37("2", 100000, 100000);
+                check("proj_c's GRCh38 SNP lifts to GRCh37", down.ok, true);
+                if (down.ok) {
+                    GlobalSearchIndex.Result viaLift = idx.searchPosition("2", down.start, "GRCh37");
+                    check("GRCh38 project found by a GRCh37 query at its lifted position", containsProject(viaLift.hits, "proj_c"), true);
                 }
+                GlobalSearchIndex.Result elsewhere = idx.searchPosition("2", 100001, "GRCh37");
+                check("no false hit one base away", containsProject(elsewhere.hits, "proj_c"), false);
             }
-            check("proj_c (GRCh38) is explicitly flagged as not-compared for a GRCh37 query", flagged, true);
 
             if (failures == 0) {
                 System.out.println("PASS: all GlobalSearchIndex tests passed");

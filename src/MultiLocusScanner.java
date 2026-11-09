@@ -39,6 +39,26 @@ public class MultiLocusScanner {
         List<String> extraColumns;
     }
 
+    /** Build a cross-dataset run works in: GRCh38 when any dataset is GRCh38, else GRCh37. */
+    public static String targetBuild(List<Config> configs) {
+        for (Config c : configs) if (GenomeLiftover.isGrch38(c.genomeBuild)) return "GRCh38";
+        return "GRCh37";
+    }
+
+    /** The loci in another build, index for index; a locus without a mapping becomes empty (start > end). */
+    static List<LociIdentifier.IdentifiedLocus> inBuild(List<LociIdentifier.IdentifiedLocus> sorted, String from, String to) {
+        List<LociIdentifier.IdentifiedLocus> out = new ArrayList<>();
+        for (LociIdentifier.IdentifiedLocus l : sorted) {
+            LociIdentifier.IdentifiedLocus c = new LociIdentifier.IdentifiedLocus();
+            c.chr = l.chr;
+            GenomeLiftover.Result r = GenomeLiftover.convert(from, to, l.chr, l.start, l.end);
+            if (r.ok && r.chr.equalsIgnoreCase(normalizeChr(l.chr))) { c.start = r.start; c.end = r.end; }
+            else { c.start = 1; c.end = 0; }
+            out.add(c);
+        }
+        return out;
+    }
+
     public static MultiLocusResult scan(List<Config> configs, List<String> datasetIds,
                                          List<LociIdentifier.IdentifiedLocus> loci,
                                          GffParser gff, MultiLocusProgress progress) throws IOException {
@@ -49,13 +69,26 @@ public class MultiLocusScanner {
         sorted.sort(Comparator.comparingInt((LociIdentifier.IdentifiedLocus l) -> Locus.chrToInt(l.chr))
                               .thenComparingLong(l -> l.start));
 
+        String target = targetBuild(configs);
+        List<String> lifted = new ArrayList<>();
         Map<String, Map<Integer, LocusAgg>> perDataset = new LinkedHashMap<>();
         Map<String, List<String>> extraColumnsByDataset = new LinkedHashMap<>();
         for (int di = 0; di < configs.size(); di++) {
             Config cfg = configs.get(di);
             progress.datasetIndex = di;
             progress.currentDataset = datasetIds.get(di);
-            ScanOneResult sr = scanOne(cfg, sorted);
+            ScanOneResult sr;
+            if (GenomeLiftover.isGrch38(cfg.genomeBuild) != GenomeLiftover.isGrch38(target)) {
+                // scanned in its own build (the loci lifted to it), then its best SNPs lifted to the run's build
+                lifted.add(datasetIds.get(di));
+                sr = scanOne(cfg, inBuild(sorted, target, cfg.genomeBuild));
+                for (LocusAgg a : sr.agg.values()) {
+                    long p = GenomeLiftover.position(cfg.genomeBuild, target, a.bestChr, a.bestPos);
+                    a.bestPos = Math.max(p, 0);   // 0: the best SNP has no position in the run's build
+                }
+            } else {
+                sr = scanOne(cfg, sorted);
+            }
             perDataset.put(datasetIds.get(di), sr.agg);
             extraColumnsByDataset.put(datasetIds.get(di), sr.extraColumns);
         }
@@ -137,9 +170,8 @@ public class MultiLocusScanner {
             progress.lociFound = result.loci.size();
         }
 
-        boolean allGrch38 = !configs.isEmpty();
-        for (Config c : configs) allGrch38 &= "GRCh38".equalsIgnoreCase(c.genomeBuild);
-        result.genomeBuild = allGrch38 ? "GRCh38" : "GRCh37";
+        result.genomeBuild = target;
+        result.liftedDatasets = lifted;
         result.markMhc();
         return result;
     }
@@ -167,7 +199,7 @@ public class MultiLocusScanner {
             idxList.sort(Comparator.comparingLong(i -> sorted.get(i).start));
         }
 
-        try (BufferedReader br = new BufferedReader(new FileReader(cfg.gwasFile), 1024 * 1024)) {
+        try (BufferedReader br = gwasio.GwasFiles.open(cfg.gwasFile)) {
             String header = br.readLine();
             if (header == null) return result;
             String[] cols = header.trim().split("\t");

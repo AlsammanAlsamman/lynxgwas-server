@@ -19,23 +19,16 @@ public final class GenomeHeritability {
 
     private GenomeHeritability() {}
 
-    /** LD score directory: env LYNXGWAS_LDSC, else appRoot/resources/ldsc/eur_w_ld_chr. */
-    public static File ldscDir() {
-        String env = System.getenv("LYNXGWAS_LDSC");
-        if (env != null && !env.isEmpty()) return new File(env);
-        return new File(SusieAdapter.appRoot(), "resources/ldsc/eur_w_ld_chr");
-    }
+    /** GRCh37 LD score directory (RefBuild.ldscDir gives the one of any build). */
+    public static File ldscDir() { return RefBuild.ldscDir("GRCh37"); }
 
     public static File resultFile(Config cfg) { return new File(cfg.outputDir, "heritability/ldsc.json"); }
 
     /** Runs LDSC for one project and writes ldsc.json; returns the JSON written. */
     public static String run(Config cfg, File ldDir, ProgressListener progress) throws IOException {
         if (!new File(ldDir, "1.l2.ldscore.gz").isFile())
-            throw new IOException("LD scores not found in " + ldDir.getAbsolutePath()
-                + " (expected eur_w_ld_chr: 1.l2.ldscore.gz ... 22.l2.ldscore.gz)");
-        if (cfg.genomeBuild != null && !cfg.genomeBuild.isEmpty() && !cfg.genomeBuild.toUpperCase().startsWith("GRCH37")
-                && !cfg.genomeBuild.toLowerCase().startsWith("hg19"))
-            throw new IOException("LD scores are on GRCh37; this project is " + cfg.genomeBuild);
+            throw new IOException("The " + RefBuild.name(cfg.genomeBuild) + " LD scores are not installed (" + ldDir.getAbsolutePath()
+                + "): run \"setup" + (RefBuild.is38(cfg.genomeBuild) ? " --build 38" : "") + "\".");
 
         // ── LD scores, keyed by chr * 1e10 + pos, in genomic order ──
         progress.update("Reading LD scores", 0);
@@ -72,8 +65,7 @@ public final class GenomeHeritability {
         Arrays.fill(chi2, Double.NaN);
         long rows = 0, matched = 0, fromP = 0;
         boolean or = "OR".equalsIgnoreCase(cfg.effectType);
-        try (BufferedReader br = new BufferedReader(new InputStreamReader(gwas.getName().endsWith(".gz")
-                ? new GZIPInputStream(new FileInputStream(gwas), 1 << 16) : new FileInputStream(gwas), "UTF-8"), 1 << 20)) {
+        try (BufferedReader br = gwasio.GwasFiles.open(gwas)) {
             String header = br.readLine();
             if (header == null) throw new IOException("GWAS file is empty");
             String sep = header.contains("\t") ? "\t" : "\\s+";

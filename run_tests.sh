@@ -34,6 +34,8 @@ javac -encoding UTF-8 -d bin -cp "bin$LIBCP" \
   tests/MhcRegionTest.java \
   tests/DirectionCheckTest.java \
   tests/OfflineModeTest.java \
+  tests/GwasFilesTest.java \
+  tests/LociPanelChromosomeTest.java \
   tests/ToolLocatorTest.java \
   tests/PlinkRunnerTest.java \
   tests/LdscRegressionTest.java \
@@ -156,6 +158,10 @@ java -cp "bin$LIBCP" DirectionCheckTest || FAILED=1
 
 echo "--- OfflineModeTest ---"
 java -cp "bin$LIBCP" OfflineModeTest src || FAILED=1
+echo "--- GwasFilesTest ---"
+java -cp "bin$LIBCP" GwasFilesTest || FAILED=1
+echo "--- LociPanelChromosomeTest ---"
+java -cp "bin$LIBCP" LociPanelChromosomeTest || FAILED=1
 
 echo
 echo "--- GlobalSearchIndexTest ---"

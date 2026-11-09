@@ -135,7 +135,7 @@ public class RsidPipeline {
             System.out.printf("[RsidPipeline] Reading original: %s%n", originalGwas);
             System.out.printf("[RsidPipeline] Writing to: %s%n", outputName);
 
-            try (BufferedReader br = new BufferedReader(new FileReader(originalGwas), 1024 * 1024);
+            try (BufferedReader br = gwasio.GwasFiles.open(originalGwas);
                  PrintWriter out = new PrintWriter(new BufferedWriter(new FileWriter(outputName), 1024 * 1024));
                  PrintWriter csv = new PrintWriter(new BufferedWriter(new FileWriter(csvPath)))) {
 

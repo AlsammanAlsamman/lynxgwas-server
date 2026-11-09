@@ -30,10 +30,10 @@ public final class ConfigPolicy {
         c.gwasFile     = previous != null ? previous.gwasFile : "";
         c.lociFile     = previous != null && insideProject(previous.lociFile, projectDir) ? previous.lociFile : "";
         c.topSnpFile   = "";
-        c.gff3File     = sc.gff3File;
-        c.refPanelPath = sc.refPanelPath;
+        c.gff3File     = sc.gff3For(c.genomeBuild);
+        c.refPanelPath = sc.refPanelFor(c.genomeBuild);
         c.refPanelPopulation = sc.refPanelPopulation;
-        c.ldEnabled    = !sc.refPanelPath.isEmpty() && c.ldEnabled;
+        c.ldEnabled    = !c.refPanelPath.isEmpty() && c.ldEnabled;
 
         for (String[] col : new String[][]{
                 {"col.chr", c.colChr}, {"col.pos", c.colPos}, {"col.pvalue", c.colPvalue}, {"col.rsid", c.colRsid},

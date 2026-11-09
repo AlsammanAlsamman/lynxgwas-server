@@ -58,7 +58,7 @@ public class RsidDetector {
      * Detect from a GWAS file directly. Reads header + first ~1000 rows.
      */
     public static DetectionResult detectFromFile(String gwasFile) throws IOException {
-        try (BufferedReader br = new BufferedReader(new FileReader(gwasFile))) {
+        try (BufferedReader br = gwasio.GwasFiles.open(gwasFile)) {
             String headerLine = br.readLine();
             if (headerLine == null) return new DetectionResult(false, null, 0);
             String[] header = headerLine.trim().split("\t");

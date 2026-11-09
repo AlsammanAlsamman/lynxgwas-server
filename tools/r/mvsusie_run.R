@@ -41,7 +41,7 @@ COMP <- c(A = "T", T = "A", C = "G", G = "C")
 # ── 1. Reference panel window ────────────────────────────────────────────
 win <- file.path(work, "win")
 st <- system2(man$plink, c("--bfile", shQuote(man$ref_panel), "--chr", chr, "--from-bp", lo, "--to-bp", hi,
-                           "--make-bed", "--memory", "4096", "--threads", "1", "--out", shQuote(win), "--silent"),
+                           "--make-bed", "--memory", as.character(if (is.null(man$plink_memory_mb)) 4096 else man$plink_memory_mb), "--threads", "1", "--out", shQuote(win), "--silent"),
               stdout = TRUE, stderr = TRUE)
 if (!file.exists(paste0(win, ".bim"))) fail("PLINK could not extract the reference panel window")
 bim <- fread(paste0(win, ".bim"), header = FALSE, col.names = c("CHR", "SNP", "CM", "BP", "A1", "A2"), data.table = FALSE)

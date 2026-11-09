@@ -30,6 +30,8 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   tests\MhcRegionTest.java ^
   tests\DirectionCheckTest.java ^
   tests\OfflineModeTest.java ^
+  tests\GwasFilesTest.java ^
+  tests\LociPanelChromosomeTest.java ^
   tests\ToolLocatorTest.java ^
   tests\PlinkRunnerTest.java ^
   tests\LdscRegressionTest.java ^
@@ -189,6 +191,16 @@ if %ERRORLEVEL% neq 0 set FAILED=1
 echo.
 echo --- OfflineModeTest ---
 java -cp "bin%LIBCP%" OfflineModeTest src
+if %ERRORLEVEL% neq 0 set FAILED=1
+
+echo.
+echo --- GwasFilesTest ---
+java -cp "bin%LIBCP%" GwasFilesTest
+if %ERRORLEVEL% neq 0 set FAILED=1
+
+echo.
+echo --- LociPanelChromosomeTest ---
+java -cp "bin%LIBCP%" LociPanelChromosomeTest
 if %ERRORLEVEL% neq 0 set FAILED=1
 
 echo.

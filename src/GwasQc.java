@@ -61,7 +61,7 @@ public class GwasQc {
         if (!f.isFile()) { r.error = "GWAS file not found: " + config.gwasFile; return r; }
 
         List<SnpRec> recs = new ArrayList<>();
-        try (BufferedReader br = new BufferedReader(new FileReader(f), 1 << 20)) {
+        try (BufferedReader br = gwasio.GwasFiles.open(f)) {
             String headerLine = br.readLine();
             if (headerLine == null) { r.error = "Empty GWAS file"; return r; }
             String[] header = headerLine.trim().split("\t");

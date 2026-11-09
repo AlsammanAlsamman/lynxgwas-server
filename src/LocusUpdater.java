@@ -635,7 +635,7 @@ public class LocusUpdater {
     }
 
     private static void streamGwasForLocus(Locus locus, Config config) throws IOException {
-        try (BufferedReader br = new BufferedReader(new FileReader(config.gwasFile), 1024 * 1024)) {
+        try (BufferedReader br = gwasio.GwasFiles.open(config.gwasFile)) {
             String header = br.readLine();
             if (header == null) return;
 

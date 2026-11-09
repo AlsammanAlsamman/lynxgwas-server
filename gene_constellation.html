@@ -372,6 +372,7 @@ function render(data, mode) {
     (data.mhc_loci_count ? ' &nbsp;·&nbsp; <b>' + data.mhc_loci_count + '</b> MHC loci excluded' +
       '<span title="' + esc('Loci in the MHC window (' + data.mhc_window + '): their long-range LD links genes across unrelated diseases, so they get no node, link or test. Genes: ' + (data.mhc_genes || []).join(', ')) + '" style="cursor:help;border-bottom:1px dotted currentColor">' +
       ' (' + esc((data.mhc_genes || []).slice(0, 4).join(', ') + ((data.mhc_genes || []).length > 4 ? ', …' : '')) + ')</span>' : '') +
+    (data.lifted_datasets && data.lifted_datasets.length ? ' &nbsp;·&nbsp; <span title="' + esc('Lifted to ' + data.genome_build + ' for this run: ' + data.lifted_datasets.join(', ')) + '" style="cursor:help;border-bottom:1px dotted currentColor"><b>' + data.lifted_datasets.length + '</b> dataset(s) lifted to ' + esc(data.genome_build) + '</span>' : '') +
     ' &nbsp;·&nbsp; threshold p&le;' + data.threshold +
     (normalized.edges.length ? ' &nbsp;·&nbsp; <b>' + normalized.edges.length + '</b> co-significance links' : '');
 

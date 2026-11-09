@@ -108,10 +108,11 @@ public final class SnpRankModel {
 
     /** log(1 + LD score of the nearest HapMap3 SNP within 100 kb), or NaN if none. */
     public static synchronized double ldScoreLog(File ldDir, String chr, long pos) throws IOException {
-        String c = chr.replaceFirst("^chr", "");
+        // keyed by folder too: GRCh37 and GRCh38 LD scores hold different positions
+        String c = ldDir.getAbsolutePath() + "|" + chr.replaceFirst("^chr", "");
         if (!LD_POS.containsKey(c)) {
             List<long[]> rows = new ArrayList<>();
-            File f = new File(ldDir, c + ".l2.ldscore.gz");
+            File f = new File(ldDir, chr.replaceFirst("^chr", "") + ".l2.ldscore.gz");
             if (f.isFile()) {
                 try (BufferedReader br = new BufferedReader(new InputStreamReader(new GZIPInputStream(new FileInputStream(f)), "UTF-8"))) {
                     String line = br.readLine();

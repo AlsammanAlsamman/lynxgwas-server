@@ -80,8 +80,7 @@ public final class SampleSizeCheck {
         List<Double> perSnpN = new ArrayList<>(), perSnpRatio = new ArrayList<>();   // N column; information / N per SNP
         String freqSource = "";
         long rows = 0;
-        try (BufferedReader br = new BufferedReader(new InputStreamReader(gwas.getName().endsWith(".gz")
-                ? new GZIPInputStream(new FileInputStream(gwas), 1 << 16) : new FileInputStream(gwas), "UTF-8"), 1 << 20)) {
+        try (BufferedReader br = gwasio.GwasFiles.open(gwas)) {
             String header = br.readLine();
             if (header == null) throw new IOException("GWAS file is empty");
             String sep = header.contains("\t") ? "\t" : "\\s+";

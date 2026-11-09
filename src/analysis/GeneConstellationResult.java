@@ -12,6 +12,9 @@ public class GeneConstellationResult {
     public int mhcLociCount = 0;          // aligned loci in the MHC window, left out of nodes, edges and tests
     public Set<String> mhcGenes = new TreeSet<>();
     public String mhcWindow = "";
+    public String genomeBuild = "GRCh37";
+    /** Datasets lifted to genomeBuild for the run (they were on the other build). */
+    public List<String> liftedDatasets = new ArrayList<>();
     public List<MultiLocusResult.DatasetInfo> datasets = new ArrayList<>();
     public List<GeneEntry> genes = new ArrayList<>();
     public List<GeneEdge> edges = new ArrayList<>();
@@ -85,6 +88,9 @@ public class GeneConstellationResult {
         j.append("\"unassigned_loci_count\":").append(unassignedLociCount).append(",");
         j.append("\"mhc_loci_count\":").append(mhcLociCount).append(",");
         kv(j, "mhc_window", mhcWindow); j.append(",");
+        j.append("\"genome_build\":\"").append(genomeBuild).append("\",\"lifted_datasets\":[");
+        for (int li = 0; li < liftedDatasets.size(); li++) j.append(li > 0 ? "," : "").append('"').append(liftedDatasets.get(li).replace("\\", "\\\\").replace("\"", "\\\"")).append('"');
+        j.append("],");
         j.append("\"mhc_genes\":[");
         { int k = 0; for (String g : mhcGenes) { if (k++ > 0) j.append(","); j.append("\"").append(esc(g)).append("\""); } }
         j.append("],");

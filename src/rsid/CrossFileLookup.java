@@ -70,7 +70,7 @@ public class CrossFileLookup {
 
     private static int indexOneFile(String gwasFile, String colChr, String colPos, String colRsid,
                                     Map<String, String> index) throws IOException {
-        try (BufferedReader br = new BufferedReader(new FileReader(gwasFile), 1 << 20)) {
+        try (BufferedReader br = gwasio.GwasFiles.open(gwasFile)) {
             String header = br.readLine();
             if (header == null) return 0;
             String[] cols = header.trim().split("\t");

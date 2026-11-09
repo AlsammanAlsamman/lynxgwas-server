@@ -31,7 +31,12 @@ public class ServerApi {
     private long reservedTotal;
     private final Map<String, Long> reservedByOwner = new HashMap<>();
 
-    public ServerApi(ServerContext ctx) { this.ctx = ctx; }
+    private final WorkspacePacks packs;
+
+    public ServerApi(ServerContext ctx) { this.ctx = ctx; this.packs = new WorkspacePacks(ctx); }
+
+    /** Project-pack export and import for workspaces. */
+    public WorkspacePacks packs() { return packs; }
 
     public void register(HttpServer http) {
         SecurityGate g = ctx.gate;
@@ -138,6 +143,11 @@ public class ServerApi {
     private void my(HttpExchange ex) throws IOException {
         String action = ex.getRequestURI().getPath().substring("/api/my/".length());
         String userId = SecurityGate.userId(ex);
+        if (ex.getRequestMethod().equalsIgnoreCase("GET")) {
+            if (action.equals("pack-export-progress")) { packs.exportProgress(ex); return; }
+            if (action.equals("pack-import-progress")) { packs.importProgress(ex); return; }
+            if (action.equals("pack-download")) { packs.download(ex); return; }
+        }
         if (action.equals("usage") && ex.getRequestMethod().equalsIgnoreCase("GET")) {
             json(ex, 200, "{\"projects\":" + ctx.registry.ownedBy(userId).size()
                 + ",\"max_projects\":" + ctx.cfg.maxProjectsPerUser
@@ -149,6 +159,7 @@ public class ServerApi {
         Map<String, Object> b = body(ex);
         if (b == null) { SecurityGate.deny(ex, 400, "Invalid request"); return; }
 
+        if (action.equals("pack-export")) { packs.startExport(ex, b); return; }
         if (action.equals("projects")) {
             String name = str(b, "name").trim(), desc = str(b, "description").trim();
             if (name.isEmpty() || name.length() > 80 || desc.length() > 500 || hasControl(name) || hasControl(desc)) {
@@ -202,6 +213,7 @@ public class ServerApi {
     private void upload(HttpExchange ex) throws IOException {
         if (!ex.getRequestMethod().equalsIgnoreCase("POST")) { SecurityGate.deny(ex, 405, "POST required"); return; }
         String[] parts = ex.getRequestURI().getPath().substring("/api/upload/".length()).split("/");
+        if (parts.length == 1 && parts[0].equals("pack")) { packs.upload(ex); return; }
         if (parts.length != 2 || !parts[1].equals("gwas")) { SecurityGate.deny(ex, 404, "Not found"); return; }
         String projectId = parts[0];
         if (!ctx.gate.requireProject(ex, projectId, true)) return;
@@ -256,26 +268,27 @@ public class ServerApi {
         File cfgFile = new File(projectDir, "config.properties");
         Config c = cfgFile.exists() ? Config.loadFromProject(projectDir.getAbsolutePath()) : new Config();
         c.gwasFile = dest.getAbsolutePath();
-        c.gff3File = ctx.cfg.gff3File;
-        c.refPanelPath = ctx.cfg.refPanelPath;
+        c.gff3File = ctx.cfg.gff3For(c.genomeBuild);
+        c.refPanelPath = ctx.cfg.refPanelFor(c.genomeBuild);
         c.refPanelPopulation = ctx.cfg.refPanelPopulation;
-        c.ldEnabled = !ctx.cfg.refPanelPath.isEmpty();
+        c.ldEnabled = !c.refPanelPath.isEmpty();
         if (!cfgFile.exists()) c.lociFile = "";
         c.writeProperties(cfgFile.getAbsolutePath());
+        // An imported results-only project now has its summary statistics: it can be re-run
+        ProjectMetadata pm = ProjectMetadata.load(projectDir.getAbsolutePath());
+        if (pm != null && pm.resultsOnly) { pm.resultsOnly = false; pm.save(projectDir.getAbsolutePath()); }
 
         json(ex, 200, "{\"ok\":true,\"bytes\":" + written + ",\"columns\":" + columnsJson(dest) + "}");
     }
 
     /**
      * Copies an uploaded GWAS table to {@code out} as tab-separated UTF-8 text: gunzips when the
-     * body is gzip, turns comma/space/semicolon-separated files into tabs, drops CRs, and refuses
-     * binary content. Stops at {@code maxBytes} of output (guards against gzip bombs and quotas).
+     * body is gzip, reads the table out of a .zip (its one data file, which may itself be gzipped),
+     * turns comma/space/semicolon-separated files into tabs, drops CRs, and refuses binary content.
+     * Stops at {@code maxBytes} of output (guards against gzip and zip bombs and quotas).
      */
     static long normalizeToTsv(InputStream in, File out, long maxBytes) throws IOException {
-        in.mark(4);
-        int b0 = in.read(), b1 = in.read();
-        in.reset();
-        InputStream text = (b0 == 0x1f && b1 == 0x8b) ? new GZIPInputStream(in, 1 << 16) : in;
+        InputStream text = gwasio.GwasFiles.unpack(in);
         long total = 0, lines = 0;
         try (BufferedReader br = new BufferedReader(new InputStreamReader(text, StandardCharsets.UTF_8), 1 << 20);
              Writer w = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(out), StandardCharsets.UTF_8), 1 << 20)) {
