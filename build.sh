@@ -5,6 +5,15 @@ set -e
 echo "=== Building LYNXgwas ==="
 mkdir -p bin
 
+# lib/ is git-ignored: a fresh clone fetches the htsjdk jar the Dockerfile pins (same URL and checksum)
+if ! ls lib/*.jar >/dev/null 2>&1; then
+  mkdir -p lib
+  curl -fsSL -o lib/htsjdk-5.0.0-all.jar \
+    https://github.com/AlsammanAlsamman/LYNXgwas/raw/main/python/lynxgwas/_bundled/lib/htsjdk-5.0.0-all.jar
+  echo "0d3f0ea8863d660f667b131a5103211279f1a1f638341f44bde3654195b0fd0d  lib/htsjdk-5.0.0-all.jar" | sha256sum -c - \
+    || { rm -f lib/htsjdk-5.0.0-all.jar; echo "htsjdk jar checksum mismatch" >&2; exit 1; }
+fi
+
 LIBCP=""
 for f in lib/*.jar; do
   [ -e "$f" ] && LIBCP="$LIBCP:$f"
