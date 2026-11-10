@@ -18,6 +18,30 @@ scripts/package-server.sh linux-x64 /path/to/linux-jdk-17.0.10   # -> dist/lynxg
 ./run_tests.sh                                                   # includes ServerSecurityTest + ServerHttpTest
 ```
 
+### Running it with Docker, and loading the article's 30 datasets
+
+```sh
+git clone https://github.com/AlsammanAlsamman/lynxgwas-server.git && cd lynxgwas-server
+cp .env.example .env                       # reference folder, pepper, CPU/memory limits
+nano docker/server.docker.properties       # public.origin, storage limits
+docker compose --profile setup run --rm setup              # once: downloads and builds the reference data (GRCh37)
+docker compose run --rm lynxgwas check                     # lists anything an analysis still lacks
+docker compose up -d --build
+```
+
+The article's 30 GWAS datasets come as one data pack (`lynxgwas-example-data-v2.zip`, results only, no
+summary statistics). Put it in `packs/` next to `docker-compose.yml`, then:
+
+```sh
+docker compose --profile setup run --rm -v "$PWD/packs:/packs:ro" setup import-pack /packs/lynxgwas-example-data-v2.zip
+docker compose restart lynxgwas
+```
+
+They appear as public, read-only projects with one cross-dataset run over all 30. The import never
+overwrites: projects or runs with the same name are kept, so an older copy must be moved aside first
+(`docs/DEPLOY.md`, section 3). Without Docker: `./lynxgwas-server import-pack <pack.zip>` from the app
+folder, with the server stopped.
+
 The rest of this README describes the analysis features, which are shared with the desktop app.
 
 ---
@@ -123,7 +147,9 @@ your own GWAS summary statistics and walk through the setup wizard.
 
 **Loci & annotation**
 - Automatic loci identification from GWAS summary stats via PLINK clumping (or supply your own `loci.txt`)
-- rsID recovery from a local dbSNP VCF, with optional NCBI/gnomAD API completion for anything left unmatched
+- rsID recovery from a local dbSNP VCF, with optional NCBI/gnomAD API completion for anything left unmatched;
+  genome-wide recovery gives every SNP of a file without rsIDs its dbSNP rsID by position and alleles
+  (`java -cp "bin:lib/*" rsid.GenomeRsidRecovery <dbsnp.vcf.gz> <gwas> <chr col> <pos col> <ea col> <nea col>`)
 - Gene-track annotation from a GENCODE GFF3, with nearest-gene lookup outside the plotted window
 - Custom annotation tracks from your own TSV files (point/bar/flag styles) via an in-viewer wizard
 - Genome-wide QC triage: genomic inflation factor (λ<sub>GC</sub>), with an optional LDSC-intercept comparison to separate genuine polygenicity from confounding

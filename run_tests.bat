@@ -31,6 +31,7 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   tests\DirectionCheckTest.java ^
   tests\OfflineModeTest.java ^
   tests\GwasFilesTest.java ^
+  tests\GenomeRsidRecoveryTest.java ^
   tests\LociPanelChromosomeTest.java ^
   tests\ToolLocatorTest.java ^
   tests\PlinkRunnerTest.java ^
@@ -196,6 +197,10 @@ if %ERRORLEVEL% neq 0 set FAILED=1
 echo.
 echo --- GwasFilesTest ---
 java -cp "bin%LIBCP%" GwasFilesTest
+if %ERRORLEVEL% neq 0 set FAILED=1
+
+echo --- GenomeRsidRecoveryTest ---
+java -cp "bin%LIBCP%" GenomeRsidRecoveryTest
 if %ERRORLEVEL% neq 0 set FAILED=1
 
 echo.

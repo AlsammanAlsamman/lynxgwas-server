@@ -13,6 +13,7 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   src\rsid\MatchResult.java ^
   src\rsid\RsidMatcher.java ^
   src\rsid\RsidRecovery.java ^
+  src\rsid\GenomeRsidRecovery.java ^
   src\rsid\RsidDetector.java ^
   src\rsid\GlobalConfig.java ^
   src\rsid\RsidProgress.java ^
