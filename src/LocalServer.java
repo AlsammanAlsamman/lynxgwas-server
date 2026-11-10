@@ -5278,7 +5278,7 @@ public class LocalServer {
                 gw.put("beta", c.cfg.colBeta); gw.put("or", c.cfg.colOr);
                 d.put("gwas", gw);
                 File nullCache = mvsusieNullCache(c.pid, c.cfg);
-                if (liftThis) nullCache = new File(nullCache.getParentFile(), c.pid + "." + GenomeLiftover.normalize(result.genomeBuild) + ".rds");
+                if (liftThis) nullCache = new File(nullCache.getParentFile(), c.pid + "." + GenomeLiftover.normalize(result.genomeBuild) + "." + nullCacheKey(c.cfg) + ".rds");
                 d.put("null_cache", nullCache.getAbsolutePath().replace("\\", "/"));
                 File harmIn = liftThis ? liftedHarmonized(c.harmonized, c.cfg.genomeBuild, result.genomeBuild, new File(work, c.pid + ".harmonized.tsv")) : c.harmonized;
                 d.put("files", new ArrayList<Object>(Collections.singletonList(harmIn.getAbsolutePath().replace("\\", "/"))));
@@ -5382,7 +5382,13 @@ public class LocalServer {
     }
 
     private File mvsusieNullCache(String pid, Config cfg) {
-        return new File("output/mvsusie_null_z/" + pid + ".rds").getAbsoluteFile();
+        return new File("output/mvsusie_null_z/" + pid + "." + nullCacheKey(cfg) + ".rds").getAbsoluteFile();
+    }
+
+    /** The columns the null z are read with: an allele-column fix must not reuse z of the old orientation. */
+    private static String nullCacheKey(Config cfg) {
+        String k = String.join("|", cfg.gwasFile, cfg.colChr, cfg.colPos, cfg.colEa, cfg.colNea, cfg.colSe, cfg.colBeta, cfg.colOr);
+        return Integer.toHexString(k.hashCode());
     }
 
     private String mvsusiePublicError(String msg) {

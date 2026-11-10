@@ -64,6 +64,7 @@ for (d in man$datasets) {
     nn <- suppressWarnings(as.numeric(g$n))
     if (sum(is.finite(nn)) > 0.5 * nrow(g)) g <- g[is.finite(nn) & nn >= 0.8 * max(nn, na.rm = TRUE), , drop = FALSE]
   }
+  if (!nrow(g)) { exclude(d$id, "no usable SNPs in this window"); next }   # paste0 on empty columns gives ":"
   g$key <- paste0(g$chr, ":", g$pos)
   g <- g[!duplicated(g$key) & g$key %in% bim$key, , drop = FALSE]
   b <- bim[g$key, ]
