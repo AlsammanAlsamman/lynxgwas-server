@@ -2800,7 +2800,6 @@ async function openProjectAnalysis(projectId) {
 
     // Build config row
     html += '<div style="display:flex;gap:12px;align-items:center;margin-top:0.75rem;flex-wrap:wrap;font-size:0.8rem;color:#475569">'
-      + '<label>Threads: <input type="number" id="analysis-threads" value="2" min="1" max="16" style="width:50px;padding:3px 6px;border:1px solid #d1d5db;border-radius:4px;font-size:0.8rem"></label>'
       + '<label>LD window (SNPs each side): <input type="number" id="analysis-ld-window" value="200" min="10" max="5000" style="width:65px;padding:3px 6px;border:1px solid #d1d5db;border-radius:4px;font-size:0.8rem"></label>'
       + '</div>';
 
@@ -3074,11 +3073,10 @@ async function buildBaseArtifacts(projectId) {
     + '<div id="analysis-build-status" style="font-size:0.8rem;color:#64748b;margin-top:4px"></div>';
 
   try {
-    var threads = parseInt(document.getElementById('analysis-threads').value) || 2;
     var ldWindow = parseInt(document.getElementById('analysis-ld-window').value) || 200;
     await fetch(API + '/api/project/' + encodeURIComponent(projectId) + '/analysis/build-base', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ threads: threads, ld_window: ldWindow })
+      body: JSON.stringify({ ld_window: ldWindow })
     });
 
     var pollId = setInterval(async function() {

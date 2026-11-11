@@ -1924,10 +1924,9 @@ public class LocalServer {
 
         String body = new String(readAll(ex.getRequestBody()), "UTF-8");
         String locusId = extractStr(body, "locus_id");
-        String threadsStr = extractStr(body, "threads");
         String ldWindowStr = extractStr(body, "ld_window");
-        final int nThreads = (threadsStr != null && !threadsStr.isEmpty())
-            ? Math.max(1, Math.min(Integer.parseInt(threadsStr), 4)) : 2;
+        // The server sets the thread count; a shared machine never takes it from the request
+        final int nThreads = 2;
         final int ldWindow = (ldWindowStr != null && !ldWindowStr.isEmpty())
             ? Math.max(10, Math.min(Integer.parseInt(ldWindowStr), 5000)) : LdMatrixComputer.DEFAULT_LD_WINDOW;
 
