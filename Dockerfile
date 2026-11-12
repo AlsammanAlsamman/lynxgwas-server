@@ -14,7 +14,8 @@
 FROM eclipse-temurin:21-jdk-noble AS build
 WORKDIR /src
 # Third-party jar, pinned by checksum (htsjdk "all" jar = the one the desktop app bundles)
-ADD --checksum=sha256:0d3f0ea8863d660f667b131a5103211279f1a1f638341f44bde3654195b0fd0d \
+# --chmod: a URL ADD is created 0600 root, which the unprivileged runtime user could not read
+ADD --chmod=0644 --checksum=sha256:0d3f0ea8863d660f667b131a5103211279f1a1f638341f44bde3654195b0fd0d \
     https://github.com/AlsammanAlsamman/LYNXgwas/raw/main/python/lynxgwas/_bundled/lib/htsjdk-5.0.0-all.jar lib/
 COPY src/ src/
 COPY build.sh index.html viewer.html serpent_plot.html gene_constellation.html summary.html ./
@@ -46,13 +47,16 @@ RUN mkdir -p /opt/bin /tmp/gwama \
 
 # ── 3. Runtime: R 4.6.1 with the article's package versions ─────────────────────
 FROM rocker/r-ver:4.6.1
-RUN apt-get update && apt-get install -y --no-install-recommends openjdk-21-jre-headless curl \
+# libgsl27: the binary mashr package (needed by mvsusieR) links against GSL
+RUN apt-get update && apt-get install -y --no-install-recommends openjdk-21-jre-headless curl libgsl27 \
  && rm -rf /var/lib/apt/lists/*
 RUN R -q -e 'install.packages("remotes")' \
  && R -q -e 'v <- c(susieR="0.14.2", bigstatsr="1.6.2", bigsnpr="1.12.21", data.table="1.18.4", Matrix="1.7.6", \
                     coloc="5.2.3", RSpectra="0.16.2", jsonlite="2.0.0"); \
              for (p in names(v)) remotes::install_version(p, v[[p]], upgrade = "never"); \
              stopifnot(all(sapply(names(v), function(p) as.character(packageVersion(p)) == v[[p]])))'
+# GitHub tarballs can take longer than R's default 60 s download timeout
+ENV R_DEFAULT_INTERNET_TIMEOUT=600
 ENV LYNXGWAS_R_LIB=/opt/mvsusie-lib
 RUN mkdir -p "$LYNXGWAS_R_LIB" \
  && R -q -e 'lib <- Sys.getenv("LYNXGWAS_R_LIB"); \
@@ -81,7 +85,7 @@ COPY docker/entrypoint.sh /usr/local/bin/lynxgwas-entrypoint
 RUN groupadd --system --gid 10001 lynxgwas \
  && useradd --system --uid 10001 --gid 10001 --home-dir /data --shell /usr/sbin/nologin lynxgwas \
  && ln -s /opt/tools/bin/plink bin/plink \
- && for d in projects output config gwascatalog_data; do ln -s /data/$d /app/$d; done \
+ && for d in projects output config gwascatalog_data example-data; do ln -s /data/$d /app/$d; done \
  && ln -s /reference /app/resources \
  && ln -s /reference/regulatory_data /app/regulatory_data \
  && mkdir -p /data /reference \
