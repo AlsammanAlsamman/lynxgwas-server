@@ -3,7 +3,7 @@
 # The first argument may instead be a command: check, setup, import-pack or export-pack (see docs/DEPLOY.md).
 set -eu
 
-for d in projects output config gwascatalog_data server-data; do
+for d in projects output config gwascatalog_data example-data server-data; do
   mkdir -p "/data/$d"
 done
 chmod 0700 /data/server-data            # sessions, secret key: owner only

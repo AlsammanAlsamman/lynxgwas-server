@@ -162,6 +162,7 @@
 </head>
 <body>
 <header>
+  <a class="btn" id="back-link" href="index.html" title="Back to the previous page" onclick="if(history.length>1&&document.referrer){history.back();return false}">&larr; Back</a>
   <h1 id="hdr-title">Gene Constellation</h1>
   <div class="mode-toggle" id="mode-toggle">
     <button class="mode-btn active" id="mode-btn-gene" onclick="setMode('gene')">Genes</button>
